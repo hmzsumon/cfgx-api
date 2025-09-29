@@ -62,6 +62,8 @@ app.use("/api/v1", accountRoutes);
 app.use("/api/v1", cryptoRoutes);
 app.use("/api/v1", tradeRoutes);
 
+app.use("/api", cryptoRoutes);
+
 // Test Route
 app.get("/", (req, res) => {
   const data = {

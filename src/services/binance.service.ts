@@ -20,8 +20,8 @@ export async function getExchangeInfo() {
 /** bookTicker টাইপ (সিম্পল) */
 export type BookTicker = {
   symbol: string;
-  bidPrice: string; // উদাহরণ: "109000.12"
-  askPrice: string; // উদাহরণ: "109012.34"
+  bidPrice: string;
+  askPrice: string;
   bidQty?: string;
   askQty?: string;
 };
@@ -32,7 +32,6 @@ export async function getBookTicker(symbol: string): Promise<BookTicker> {
   const url = `${BASE}/api/v3/ticker/bookTicker?symbol=${encodeURIComponent(
     sym
   )}`;
-
   const res = await fetch(url, { headers: { accept: "application/json" } });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -40,7 +39,6 @@ export async function getBookTicker(symbol: string): Promise<BookTicker> {
       `Binance bookTicker failed (${res.status}): ${text || res.statusText}`
     );
   }
-
   const json = (await res.json()) as any;
   if (
     !json ||
@@ -49,7 +47,6 @@ export async function getBookTicker(symbol: string): Promise<BookTicker> {
   ) {
     throw new Error("Invalid bookTicker payload");
   }
-
   return {
     symbol: json.symbol ?? sym,
     bidPrice: json.bidPrice,
@@ -57,4 +54,21 @@ export async function getBookTicker(symbol: string): Promise<BookTicker> {
     bidQty: json.bidQty,
     askQty: json.askQty,
   };
+}
+
+/** 🔥 Klines (ক্যান্ডেল) – Binance /api/v3/klines */
+export async function getKlines(params: {
+  symbol: string; // e.g. BTCUSDT
+  interval: string; // e.g. 1m, 5m, 1h
+  limit?: number; // e.g. 800
+}) {
+  const q = new URLSearchParams({
+    symbol: params.symbol,
+    interval: params.interval,
+    ...(params.limit ? { limit: String(params.limit) } : {}),
+  });
+  const url = `${BASE}/api/v3/klines?${q.toString()}`;
+  const res = await fetch(url, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`Binance klines failed: ${res.status}`);
+  return res.json() as Promise<any[]>;
 }
