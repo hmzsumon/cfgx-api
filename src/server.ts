@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import http from "http";
-import "module-alias/register";
+// import "module-alias/register";
 
 import { connectDB } from "@/config/db";
 import { setupDailyStatsResetCron } from "@/crons/dataResetCron";
