@@ -69,30 +69,62 @@ export const getUsdts: typeHandler = catchAsync(async (_req, res) => {
 });
 
 /* ────────── ✅ GET /crypto/klines?symbol=BTCUSDT&interval=1m&limit=800 ────────── */
+/* ✅ GET /crypto/klines?symbol=BTCUSDT&interval=1m&limit=800 */
 export const getKlines: typeHandler = catchAsync(async (req, res) => {
-  const rawSym = String(req.query.symbol || "")
+  // sanitize + validate
+  let rawSym = String(req.query.symbol || "")
     .toUpperCase()
-    .replace("/", "");
-  const interval = String(req.query.interval || "1m");
-  const limit = req.query.limit ? Number(req.query.limit) : 800;
-
+    .trim();
   if (!rawSym) throw new ApiError(400, "symbol is required");
 
-  // USD → USDT normalize (BTC/USD → BTCUSDT)
-  const symbol = rawSym.endsWith("USD")
-    ? rawSym.replace("USD", "USDT")
-    : rawSym;
+  // allow BTC/USD from client → BTCUSDT
+  rawSym = rawSym.replace("/", "");
+  if (rawSym.endsWith("USD")) rawSym = rawSym.replace("USD", "USDT");
 
-  const raw = await binanceGetKlines({ symbol, interval, limit });
+  // hard validation: USDT quoted, only A-Z chars
+  if (!/^[A-Z]{6,15}$/.test(rawSym) || !rawSym.endsWith("USDT")) {
+    throw new ApiError(400, "Invalid symbol (use e.g. BTCUSDT)");
+  }
 
-  // Binance klines format: [ openTime, open, high, low, close, volume, closeTime, ... ]
-  const data = raw.map((k: any[]) => ({
-    time: Math.floor(Number(k[0]) / 1000), // seconds
-    open: Number(k[1]),
-    high: Number(k[2]),
-    low: Number(k[3]),
-    close: Number(k[4]),
-  }));
+  const interval = String(req.query.interval || "1m");
+  const limit = req.query.limit
+    ? Math.min(1000, Math.max(1, Number(req.query.limit)))
+    : 800;
 
-  res.json({ success: true, data });
+  try {
+    const raw = await binanceGetKlines({ symbol: rawSym, interval, limit });
+
+    // Binance format: [ openTime, open, high, low, close, volume, closeTime, ... ]
+    const data = raw.map((k: any[]) => ({
+      time: Math.floor(Number(k[0]) / 1000), // seconds
+      open: Number(k[1]),
+      high: Number(k[2]),
+      low: Number(k[3]),
+      close: Number(k[4]),
+    }));
+
+    // guard against garbage
+    if (
+      !Array.isArray(data) ||
+      data.length === 0 ||
+      !Number.isFinite(data[0]?.open)
+    ) {
+      throw new Error("Empty/invalid kline data");
+    }
+
+    return res.json({ success: true, data });
+  } catch (err: any) {
+    // 🔎 server-side log for debugging 500s
+    console.error("[/crypto/klines] upstream error:", {
+      symbol: rawSym,
+      interval,
+      limit,
+      message: err?.message,
+    });
+    // user-friendly response
+    return res.status(502).json({
+      success: false,
+      message: "Upstream market data unavailable. Please retry.",
+    });
+  }
 });

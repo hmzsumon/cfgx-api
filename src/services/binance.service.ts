@@ -1,20 +1,37 @@
 // services/binance.service.ts
 const BASE = process.env.BINANCE_REST || "https://api.binance.com";
 
-/** 24h টিকার তালিকা (Binance /api/v3/ticker/24hr) */
-export async function get24hStats() {
-  const url = `${BASE}/api/v3/ticker/24hr`;
-  const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`Binance 24hr failed: ${res.status}`);
-  return res.json() as Promise<any[]>;
+// ── small helper: fetch with timeout
+async function fetchJson(url: string, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { accept: "application/json", "user-agent": "cpfx-api/1.0" },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `Upstream ${res.status} ${res.statusText} — ${text?.slice(0, 200)}`
+      );
+    }
+    return res.json();
+  } finally {
+    clearTimeout(t);
+  }
 }
 
-/** এক্সচেঞ্জ ইন্ফো (Binance /api/v3/exchangeInfo) */
+/** 24h টিকার তালিকা */
+export async function get24hStats() {
+  const url = `${BASE}/api/v3/ticker/24hr`;
+  return fetchJson(url) as Promise<any[]>;
+}
+
+/** এক্সচেঞ্জ ইন্ফো */
 export async function getExchangeInfo() {
   const url = `${BASE}/api/v3/exchangeInfo`;
-  const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`Binance exchangeInfo failed: ${res.status}`);
-  return res.json() as Promise<any>;
+  return fetchJson(url) as Promise<any>;
 }
 
 /** bookTicker টাইপ (সিম্পল) */
@@ -26,20 +43,13 @@ export type BookTicker = {
   askQty?: string;
 };
 
-/** Raw bookTicker (Binance /api/v3/ticker/bookTicker?symbol=BTCUSDT) */
+/** Raw bookTicker */
 export async function getBookTicker(symbol: string): Promise<BookTicker> {
   const sym = String(symbol || "").toUpperCase();
   const url = `${BASE}/api/v3/ticker/bookTicker?symbol=${encodeURIComponent(
     sym
   )}`;
-  const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `Binance bookTicker failed (${res.status}): ${text || res.statusText}`
-    );
-  }
-  const json = (await res.json()) as any;
+  const json = (await fetchJson(url)) as any;
   if (
     !json ||
     typeof json.bidPrice !== "string" ||
@@ -68,7 +78,5 @@ export async function getKlines(params: {
     ...(params.limit ? { limit: String(params.limit) } : {}),
   });
   const url = `${BASE}/api/v3/klines?${q.toString()}`;
-  const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`Binance klines failed: ${res.status}`);
-  return res.json() as Promise<any[]>;
+  return fetchJson(url) as Promise<any[]>;
 }
