@@ -58,7 +58,7 @@ export const createDepositWithBlockBee: typeHandler = catchAsync(
       const rawUuid = uuidv4();
       const orderId = rawUuid.replace(/-/g, "");
 
-      const callbackUrl = `https://cpfx-api-01d22e6d8bdf.herokuapp.com/api/v1/callback/${orderId}`;
+      const callbackUrl = `https://cgfx-api-571c8ffe2dd2.herokuapp.com/api/v1/callback/${orderId}`;
       // console.log(`Callback URL: ${callbackUrl}`);
 
       const payment = await createPayment({
