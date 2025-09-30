@@ -19,6 +19,7 @@ import { errorHandler } from "./middlewares/errorHandler";
 import accountRoutes from "./routes/account.routes";
 import cryptoRoutes from "./routes/crypto.routes";
 import tradeRoutes from "./routes/trade.routes";
+import transferRoutes from "./routes/transfer.routes";
 
 // Config
 if (process.env.NODE_ENV !== "PRODUCTION") {
@@ -61,6 +62,7 @@ app.use("/api/v1", agentRoutes);
 app.use("/api/v1", accountRoutes);
 app.use("/api/v1", cryptoRoutes);
 app.use("/api/v1", tradeRoutes);
+app.use("/api/v1", transferRoutes);
 
 app.use("/api", cryptoRoutes);
 
