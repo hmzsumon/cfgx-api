@@ -6,6 +6,7 @@ import { connectDB } from "@/config/db";
 import { setupDailyStatsResetCron } from "@/crons/dataResetCron";
 import { attach } from "@/socket"; // <-- updated import
 import app from "./app";
+import { setupTpAutoCloseCron } from "./crons/tpAutoCloseCron";
 
 // Handling Uncaught Exception
 process.on("uncaughtException", (err) => {
@@ -21,6 +22,9 @@ connectDB();
 
 // Start cron job after DB connection is initiated
 setupDailyStatsResetCron(); // ✅ Add this line here
+
+// ✅ TP Auto-Close cron
+setupTpAutoCloseCron();
 
 // Start Server
 const server = http.createServer(app);
