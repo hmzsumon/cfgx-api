@@ -24,10 +24,6 @@ connectDB();
 // Daily stats cron (ঠিকই থাকবে)
 setupDailyStatsResetCron();
 
-// ❌ পুরনো TP Auto-Close cron বন্ধ করুন (ডাবল-ক্লোজ এড়াতে)
-// import { setupTpAutoCloseCron } from "./crons/tpAutoCloseCron";
-// setupTpAutoCloseCron();
-
 const server = http.createServer(app);
 const PORT = process.env.PORT || 8000;
 
