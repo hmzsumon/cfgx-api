@@ -20,6 +20,7 @@ import accountRoutes from "./routes/account.routes";
 import aiAccountRoutes from "./routes/aiAccount.routes";
 import cryptoRoutes from "./routes/crypto.routes";
 import tradeRoutes from "./routes/trade.routes";
+import transactionRoutes from "./routes/transactions.routes";
 import transferRoutes from "./routes/transfer.routes";
 
 // Config
@@ -65,6 +66,7 @@ app.use("/api/v1", cryptoRoutes);
 app.use("/api/v1", tradeRoutes);
 app.use("/api/v1", transferRoutes);
 app.use("/api/v1", aiAccountRoutes);
+app.use("/api/v1", transactionRoutes);
 
 app.use("/api", cryptoRoutes);
 

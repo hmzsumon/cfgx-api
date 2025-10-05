@@ -33,6 +33,8 @@ export type TransactionPurpose =
   | "Withdrawal Refund"
   | "Generation Reward"
   | "Game Betting"
+  | "Ai Trade Profit"
+  | "Ai Trade Commission"
   | "game:bet"
   | "game:win"
   | "game:refund"
@@ -120,6 +122,8 @@ const transactionSchema = new Schema<ITransaction>(
         "game:bonus",
         "game:admin_adjustment",
         "game:payout",
+        "Ai Trade Profit",
+        "Ai Trade Commission",
       ],
       required: true,
     },

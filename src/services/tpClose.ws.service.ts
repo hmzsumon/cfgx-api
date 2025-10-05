@@ -10,6 +10,9 @@ import { subscribeQuote } from "@/services/quoteHub";
 import { getContractSpec } from "@/services/specs.service";
 import { netPnlAt, round2 } from "@/utils/takeProfit";
 
+/* ────────── add: distribution after close ────────── */
+import { distributeOnAutoCloseSimple } from "@/services/autoCloseDistributor.service";
+
 /* ──────────────────────────────────────────────────────────
  * Helpers
  * ────────────────────────────────────────────────────────── */
@@ -90,6 +93,31 @@ async function tryCloseIfTpHitWithQuote(
   ).exec();
 
   const applied = res.modifiedCount > 0;
+
+  /* ── distribute funds + replicate per-plan once closed ─────────────────── */
+  if (applied) {
+    try {
+      const dist = await distributeOnAutoCloseSimple(String(pos._id));
+
+      // Optional: broadcast distribution meta for UI listeners
+      if ((global as any).io) {
+        (global as any).io.emit("position:distributed", {
+          _id: String(pos._id),
+          symbol: pos.symbol,
+          perUserAmt: dist.perUserAmt,
+          perParentsPool: dist.perParentsPool,
+          companyTotal: dist.companyTotal,
+          replicated: dist.replicated,
+          usersAffected: dist.usersAffected,
+          parentsAffected: dist.parentsAffected,
+          txCount: dist.txCount,
+        });
+      }
+    } catch (e) {
+      // keep engine alive; log error for diagnostics
+      console.error("[TP-WS] distribution error:", e);
+    }
+  }
 
   // Broadcast close event
   if (applied && (global as any).io) {

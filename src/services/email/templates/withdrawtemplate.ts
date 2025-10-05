@@ -1,46 +1,60 @@
+/* ── withdrawApprovalTemplate (Capitalise CGFX • responsive + branding) ─── */
+
 interface WithdrawApprovalParams {
-	name: string;
-	amount: number | string;
-	txId: string;
-	walletAddress: string;
+  name: string;
+  amount: number | string;
+  txId: string;
+  walletAddress: string;
 }
 
 export const withdrawApprovalTemplate = ({
-	name,
-	amount,
-	txId,
-	walletAddress,
+  name,
+  amount,
+  txId,
+  walletAddress,
 }: WithdrawApprovalParams): string => {
-	return `<!DOCTYPE html>
+  const amt = typeof amount === "number" ? amount.toFixed(2) : String(amount);
+
+  return `<!DOCTYPE html>
   <html lang="en">
     <head>
       <meta charset="UTF-8" />
+      <!-- mobile-first -->
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Withdrawal Approved - H5Fivex</title>
+      <title>Withdrawal Approved - Capitalise CGFX</title>
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+        /* ── base ── */
         body {
           margin: 0;
           padding: 0;
           background-color: #f8fafc;
-          font-family: 'Poppins', sans-serif;
+          font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+            Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji',
+            'Segoe UI Symbol', sans-serif;
           color: #1e293b;
           line-height: 1.6;
+          -webkit-text-size-adjust: 100%;
         }
+
+        /* ── shell ── */
         .container {
           max-width: 600px;
-          margin: 30px auto;
+          margin: 24px auto;
           background: #ffffff;
           border-radius: 16px;
           overflow: hidden;
           box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
           border: 1px solid #e2e8f0;
         }
+
+        /* ── header (brand gradient) ── */
         .header {
-          background: linear-gradient(135deg, #6b46c1 0%, #805ad5 100%);
-          padding: 30px 20px;
+          background: linear-gradient(135deg, #0ea5e9 0%, #22c55e 100%);
+          padding: 28px 20px;
           text-align: center;
-          color: white;
+          color: #ffffff;
           position: relative;
           overflow: hidden;
         }
@@ -51,141 +65,139 @@ export const withdrawApprovalTemplate = ({
           right: -50px;
           width: 150px;
           height: 150px;
-          background: rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.12);
           border-radius: 50%;
         }
         .logo {
-          font-size: 28px;
+          font-size: 26px;
           font-weight: 700;
           margin: 0;
+          letter-spacing: .2px;
           position: relative;
           z-index: 1;
         }
-        .logo span {
-          color: #f6e05e;
-        }
-        .tagline {
-          font-size: 14px;
-          opacity: 0.9;
-          margin-top: 5px;
-          position: relative;
-          z-index: 1;
-        }
-        .content {
-          padding: 40px 30px;
-        }
+        .logo span { color: #facc15; } /* accent */
+
+        /* ── content ── */
+        .content { padding: 28px 20px; }
+
         .title {
-          font-size: 24px;
+          font-size: 20px; /* mobile-first */
           font-weight: 600;
           color: #2d3748;
-          margin-top: 0;
-          margin-bottom: 25px;
+          margin: 0 0 18px 0;
           display: flex;
           align-items: center;
           gap: 10px;
         }
-        .title .icon {
-          color: #38a169;
-        }
+        .title .icon { color: #22c55e; }
+
+        /* ── transaction card ── */
         .transaction-card {
           background: #f8fafc;
           border-radius: 12px;
-          padding: 25px;
-          margin: 25px 0;
-          border-left: 4px solid #6b46c1;
+          padding: 18px;
+          margin: 18px 0;
+          border-left: 4px solid #0ea5e9;
         }
         .transaction-item {
-          margin-bottom: 15px;
+          margin-bottom: 14px;
           display: flex;
           align-items: flex-start;
         }
-        .transaction-item:last-child {
-          margin-bottom: 0;
-        }
+        .transaction-item:last-child { margin-bottom: 0; }
         .transaction-icon {
           margin-right: 12px;
           font-size: 18px;
-          color: #6b46c1;
+          color: #0ea5e9;
           min-width: 24px;
         }
         .transaction-label {
-          font-weight: 500;
+          font-weight: 600;
           color: #4a5568;
-          margin-bottom: 5px;
+          margin-bottom: 4px;
+          font-size: 14px;
         }
         .transaction-value {
-          font-weight: 400;
+          font-weight: 500;
           word-break: break-word;
+          color: #111827;
+          font-size: 15px;
         }
         .tx-id {
           background: #edf2f7;
           padding: 8px 12px;
           border-radius: 6px;
-          font-family: monospace;
-          font-size: 14px;
+          font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,"Liberation Mono","Courier New",monospace;
+          font-size: 13px;
           margin-top: 5px;
           display: inline-block;
           word-break: break-all;
+          color: #1f2937;
         }
+
+        /* ── security note ── */
         .security-note {
-          background: #fff5f5;
-          border-left: 4px solid #f56565;
-          padding: 15px;
-          border-radius: 8px;
-          margin: 25px 0;
+          background: #fff7ed;
+          border-left: 4px solid #f59e0b;
+          padding: 14px;
+          border-radius: 10px;
+          margin: 18px 0;
           font-size: 14px;
+          color: #7c2d12;
         }
+
+        /* ── footer ── */
         .footer {
           background: #f1f5f9;
           text-align: center;
-          padding: 20px;
-          font-size: 13px;
+          padding: 16px;
+          font-size: 12.5px;
           color: #64748b;
           border-top: 1px solid #e2e8f0;
         }
         .footer a {
-          color: #6b46c1;
+          color: #0ea5e9;
           text-decoration: none;
-          font-weight: 500;
+          font-weight: 600;
         }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #6b46c1 0%, #805ad5 100%);
-          color: white;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 8px;
-          font-weight: 500;
-          margin: 20px 0;
-          transition: all 0.3s ease;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+        /* ── desktop upscale (≥ 600px) ── */
+        @media (min-width: 600px) {
+          .container { margin: 30px auto; }
+          .content { padding: 40px 30px; }
+          .logo { font-size: 28px; }
+          .title { font-size: 24px; }
         }
-        .cta-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+
+        /* ── tiny screens (≤ 360px) ── */
+        @media (max-width: 360px) {
+          .transaction-label { font-size: 13px; }
+          .transaction-value { font-size: 14px; }
         }
       </style>
     </head>
     <body>
       <div class="container">
+        <!-- ── header ── -->
         <div class="header">
-          <h1 class="logo"><span>H5</span>Fivex</h1>
+          <h1 class="logo">Capitalise <span>CGFX</span></h1>
         </div>
 
+        <!-- ── content ── -->
         <div class="content">
           <h2 class="title"><span class="icon">✓</span> Withdrawal Approved</h2>
-          <p>Dear <strong>${name}</strong>,</p>
-          <p>
-            Your withdrawal request has been successfully processed and the funds
-            have been sent to your wallet.
-          </p>
 
+          <p>Dear <strong>${name}</strong>,</p>
+          <p>Your withdrawal request has been processed successfully and the funds have been sent to your wallet.</p>
+
+          <!-- ── transaction details ── -->
           <div class="transaction-card">
             <div class="transaction-item">
               <div class="transaction-icon">💸</div>
               <div>
                 <div class="transaction-label">Amount Withdrawn</div>
-                <div class="transaction-value">${amount} USDT</div>
+                <div class="transaction-value">${amt} USDT</div>
               </div>
             </div>
 
@@ -202,29 +214,23 @@ export const withdrawApprovalTemplate = ({
               <div>
                 <div class="transaction-label">Transaction ID</div>
                 <div class="transaction-value">
-                  <div class="tx-id">${txId}</div>
+                  <span class="tx-id">${txId}</span>
                 </div>
               </div>
             </div>
           </div>
 
+          <!-- ── security note ── -->
           <div class="security-note">
-            <strong>Important:</strong> The transaction may take some time to
-            appear in your wallet depending on network congestion. If you didn't
-            initiate this withdrawal, please secure your account immediately.
+            <strong>Important:</strong> The transaction may take some time to appear in your wallet depending on network congestion. If you didn't initiate this withdrawal, please secure your account immediately.
           </div>
 
-          <p>
-            Thank you for using H5Fivex. We're committed to providing you with
-            secure and efficient digital asset services.
-          </p>
+          <p>Thank you for using Capitalise CGFX. We're committed to providing you with secure and efficient digital asset services.</p>
         </div>
 
+        <!-- ── footer ── -->
         <div class="footer">
-          <div>
-            &copy; 2025 <a href="https://www.h5fivex.com/">H5Fivex</a>. All rights
-            reserved.
-          </div>
+          &copy; 2025 <a href="https://www.capitalisegfx.com/">Capitalise CGFX</a>. All rights reserved.
         </div>
       </div>
     </body>

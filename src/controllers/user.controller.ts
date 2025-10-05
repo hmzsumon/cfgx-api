@@ -68,7 +68,7 @@ export const registerUser: typeHandler = catchAsync(async (req, res, next) => {
     return next(new ApiError(400, "Please provide all required fields"));
   }
 
-  // get system stats
+  /* ────────── get system stats (company) ────────── */
   const company = await SystemStats.findOne();
   if (!company) {
     return next(new ApiError(400, "System is already initialized"));
@@ -119,7 +119,7 @@ export const registerUser: typeHandler = catchAsync(async (req, res, next) => {
     sponsorName: sponsor.name,
     agentId: agent._id,
     agentName: agent.name,
-    parents: [sponsor._id, ...sponsor.parents.slice(0, 2)],
+    parents: [sponsor._id, ...sponsor.parents.slice(0, 4)],
     verify_code,
   });
 
