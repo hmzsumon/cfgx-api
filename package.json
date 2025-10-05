@@ -38,10 +38,11 @@
     "nodemon": "^3.1.10",
     "ts-node-dev": "^2.0.0",
     "tsc-alias": "^1.8.16",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.x"
   },
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev": "nodemon",
     "build": "tsc",
     "postbuild": "tsc-alias",
     "start": "node dist/server.js",
