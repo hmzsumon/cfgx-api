@@ -1,9 +1,9 @@
-import dotenv from "dotenv";
-import http from "http";
-
 import { connectDB } from "@/config/db";
 import { setupDailyStatsResetCron } from "@/crons/dataResetCron";
 import { attach } from "@/socket";
+import dotenv from "dotenv";
+import http from "http";
+import "module-alias/register";
 import app from "./app";
 
 // ⬇️ WS-ড্রিভেন TP ইঞ্জিন
