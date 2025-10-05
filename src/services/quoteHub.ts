@@ -1,5 +1,5 @@
 // src/services/quoteHub.ts
-import EventEmitter from "events";
+import { EventEmitter } from "node:events";
 
 // Binance public WS endpoint (browser-incompatible ping; but Node OK)
 const BINANCE_WS = process.env.BINANCE_WS ?? "wss://stream.binance.com:9443";
