@@ -49,7 +49,14 @@ import { StringValue } from "ms";
 
 // 🔐 Register user
 export const registerUser: typeHandler = catchAsync(async (req, res, next) => {
-  const { email, password, country, referralCode, name, phone } = req.body;
+  const {
+    email,
+    password,
+    country,
+    partnerCode: referralCode,
+    name,
+    phone,
+  } = req.body;
 
   // check email already exists
   const existEmail = await User.findOne({ email });
@@ -57,7 +64,7 @@ export const registerUser: typeHandler = catchAsync(async (req, res, next) => {
     return next(new ApiError(400, "Email already exists"));
   }
 
-  if (!email || !password || !country) {
+  if (!email || !password || !country || !name || !phone) {
     return next(new ApiError(400, "Please provide all required fields"));
   }
 
@@ -213,7 +220,7 @@ export const verifyEmail: typeHandler = catchAsync(async (req, res, next) => {
 
   await sendEmail({
     email: user.email,
-    subject: "Welcome to h5FiveX - Registration Successful",
+    subject: "Welcome to Capitalise CGFX - Registration Successful",
     html: registrationEmailContent,
   });
 

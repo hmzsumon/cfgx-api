@@ -5,6 +5,7 @@ import {
   closeAiPosition,
   createAiAccount,
   getActiveAiPositions,
+  getActiveAiPositionsForUser,
   getAllAiAccounts,
   getAllAiAccountsForAdmin,
   myAiAccounts,
@@ -33,5 +34,11 @@ router.get(
 );
 
 router.post("/close-ai-position/:id", isAuthenticatedUser, closeAiPosition);
+
+router.get(
+  "/get-active-ai-positions-for-user",
+  isAuthenticatedUser,
+  getActiveAiPositionsForUser
+);
 
 export default router;

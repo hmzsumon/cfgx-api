@@ -1,12 +1,13 @@
 import dotenv from "dotenv";
 import http from "http";
-// import "module-alias/register";
 
 import { connectDB } from "@/config/db";
 import { setupDailyStatsResetCron } from "@/crons/dataResetCron";
-import { attach } from "@/socket"; // <-- updated import
+import { attach } from "@/socket";
 import app from "./app";
-import { setupTpAutoCloseCron } from "./crons/tpAutoCloseCron";
+
+// ⬇️ WS-ড্রিভেন TP ইঞ্জিন
+import { startTpWsEngine, stopTpWsEngine } from "@/services/tpClose.ws.service";
 
 // Handling Uncaught Exception
 process.on("uncaughtException", (err) => {
@@ -20,27 +21,46 @@ dotenv.config({ path: "./.env" });
 // DB connect
 connectDB();
 
-// Start cron job after DB connection is initiated
-setupDailyStatsResetCron(); // ✅ Add this line here
+// Daily stats cron (ঠিকই থাকবে)
+setupDailyStatsResetCron();
 
-// ✅ TP Auto-Close cron
-setupTpAutoCloseCron();
+// ❌ পুরনো TP Auto-Close cron বন্ধ করুন (ডাবল-ক্লোজ এড়াতে)
+// import { setupTpAutoCloseCron } from "./crons/tpAutoCloseCron";
+// setupTpAutoCloseCron();
+
+const server = http.createServer(app);
+const PORT = process.env.PORT || 8000;
+
+// Attach Socket.IO আগে করে নিন, যাতে global.io ইঞ্জিনে available থাকে
+const io = attach(server);
+(global as any).io = io;
 
 // Start Server
-const server = http.createServer(app);
-
-const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
 
-// ✅ Attach Socket.IO and assign to global
-const io = attach(server);
-// globalThis.io = io;
-(global as any).io = io;
+  // ⬇️ এখন WS-ড্রিভেন TP ইঞ্জিন চালু করুন
+  startTpWsEngine();
+});
 
 // Handle Unhandled Promise Rejection
 process.on("unhandledRejection", (err: any) => {
   console.error("❌ Unhandled Promise Rejection:", err.message);
-  server.close(() => process.exit(1));
+  server.close(() => {
+    try {
+      stopTpWsEngine();
+    } catch {}
+    process.exit(1);
+  });
 });
+
+// Graceful shutdown (Ctrl+C বা SIGTERM)
+const shutdown = () => {
+  console.log("🛑 Shutting down...");
+  try {
+    stopTpWsEngine();
+  } catch {}
+  server.close(() => process.exit(0));
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

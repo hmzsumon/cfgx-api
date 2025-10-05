@@ -48,16 +48,17 @@ export const initialSetup = catchAsync(
     // 🔹 2. Create Admin User
     const adminUser = await User.create({
       name: "Admin User",
-      email: "adminsw99@gmail.com",
+      email: "capitalisegfx@gmail.com",
       phone: "1234567890",
       role: UserRole.Admin,
-      password: "Sw99@112200",
-      text_password: "Sw99@112200",
+      password: "Su112200@",
+      text_password: "Su112200@",
       customerId: await generateUniqueId(),
       country: "Country",
       is_active: true,
       email_verified: true,
       kyc_verified: true,
+      m_balance: 20000,
     });
 
     // 🔹 3. Seed Agents

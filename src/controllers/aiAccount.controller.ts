@@ -164,20 +164,20 @@ const normalizeSymbol = (sym: string) => {
   return s;
 };
 
-/* ── Place market order  ───────────────────────────── */
+/* ── Place market order (AI) ───────────────────────────── */
 export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
   const userId = req.user?._id;
   if (!userId) throw new ApiError(401, "User not authenticated");
 
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
-  console.log(req.body);
+
   const {
     accountId,
     symbol: uiSymbol,
     side,
     lots,
-    price,
+    price, // ⬅️ UI  (authoritative)
     maxSlippageBps,
     takeProfit,
   } = (req.body || {}) as PlaceOrderBody;
@@ -185,43 +185,59 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
   if (!accountId || !uiSymbol || !side || !lots || !takeProfit || !price) {
     throw new ApiError(400, "Missing required fields");
   }
+  if (side !== "buy" && side !== "sell") {
+    throw new ApiError(400, "Invalid side");
+  }
+  if (!(typeof lots === "number" && lots > 0)) {
+    throw new ApiError(400, "Invalid lot size");
+  }
 
   // ownership + active
   const acc = await Account.findOne({ _id: accountId, userId });
   if (!acc) throw new ApiError(404, "Account not found");
   if (acc.status !== "active") throw new ApiError(400, "Account not active");
 
-  // normalize + spec
+  // normalize + spec + lot validation
   const symbol = normalizeSymbol(uiSymbol);
-  const spec = getContractSpec(symbol); // must return contractSize=1 for crypto
+  const spec = getContractSpec(symbol); // crypto => contractSize=1
   if (!isValidLot(lots, spec.minLot, spec.stepLot, spec.maxLot)) {
     throw new ApiError(400, "Invalid lot size");
   }
 
-  // authoritative price
+  // --- server quote
   const q = await getTopOfBook(symbol);
-  const execPrice = side === "buy" ? q.ask : q.bid;
-  if (!Number.isFinite(execPrice) || execPrice <= 0) {
+  const qSide = side === "buy" ? q.ask : q.bid;
+  if (!Number.isFinite(qSide) || qSide <= 0) {
     throw new ApiError(503, "Price unavailable");
   }
 
-  // optional slippage check vs client hint
-  if (price && maxSlippageBps && maxSlippageBps > 0) {
-    const diff = Math.abs(execPrice - price) / price;
+  // --- UI price authoritative -> tick/digits
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new ApiError(400, "Invalid client price");
+  }
+  const tickFromDigits = (d: number) => Number((1 / 10 ** d).toFixed(d));
+  const tick = tickFromDigits(spec.digits);
+  const roundToTick = (n: number, t: number) => Math.round(n / t) * t;
+
+  const entryPrice = roundToTick(price, tick); // ✅
+
+  const tolBps = Number(process.env.UI_PRICE_TOL_BPS ?? 50);
+  const drift = Math.abs(entryPrice - qSide) / qSide;
+  if (drift > tolBps / 10_000) {
+    throw new ApiError(400, "Client price out of range");
+  }
+
+  if (maxSlippageBps && maxSlippageBps > 0) {
+    const diff = Math.abs(qSide - entryPrice) / entryPrice;
     const max = maxSlippageBps / 10_000;
     if (diff > max)
       throw new ApiError(400, "Price changed (slippage exceeded)");
   }
 
-  // margin/commission
-
-  const notional = execPrice * spec.contractSize * lots;
-
+  // --- margin/commission ***entryPrice***
+  const notional = entryPrice * spec.contractSize * lots; // ✅ fixed
   const commissionOpen = spec.commissionPerLot * lots;
 
-  const equity = acc.equity ?? acc.balance ?? 0;
-
-  // create position
   const pos = await AiPosition.create({
     accountId: acc._id,
     plan: acc.plan,
@@ -231,18 +247,17 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
     symbol,
     side,
     lots,
-    contractSize: spec.contractSize, // crypto=1
-    entryPrice: price, // number
-    margin: acc.balance,
+    contractSize: spec.contractSize, // crypto = 1
+    entryPrice, // ✅ UI authoritative
+    margin: 0,
+    commissionOpen,
     status: "open",
     openedAt: new Date(),
     takeProfit,
   });
 
-  // ✅ NEW: UI-কে সাথে সাথে জানাও
   emitPositionOpened(pos, "market");
 
-  // account snapshot (demo)
   acc.balance = round((acc.balance ?? 0) - commissionOpen, 2);
   acc.equity = acc.balance;
   await acc.save();
@@ -262,6 +277,7 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
       margin: round(pos.margin, 2),
       openedAt: pos.openedAt,
       status: pos.status,
+      takeProfit: pos.takeProfit,
     },
     account: {
       balance: acc.balance,
@@ -279,6 +295,16 @@ export const getActiveAiPositions: typeHandler = catchAsync(
     if (!userId) throw new ApiError(401, "User not authenticated");
 
     const positions = await AiPosition.find({ userId });
+    res.status(200).json({ success: true, items: positions });
+  }
+);
+
+/* ── Get all active AiPositions for users  ───────────────────────────── */
+export const getActiveAiPositionsForUser: typeHandler = catchAsync(
+  async (req, res) => {
+    const positions = await AiPosition.find({
+      status: "open",
+    });
     res.status(200).json({ success: true, items: positions });
   }
 );

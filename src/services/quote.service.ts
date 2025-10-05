@@ -78,6 +78,7 @@ export async function getTopOfBook(
   // ✅ শুধুই টাইপে থাকা ফিল্ড ব্যবহার করো
   const rawBid = Number(raw?.bidPrice);
   const rawAsk = Number(raw?.askPrice);
+  console.log("Row bid", rawBid, rawAsk);
 
   return applySpread(s, rawBid, rawAsk);
 }

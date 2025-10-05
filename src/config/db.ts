@@ -4,7 +4,7 @@ const getMongoURI = (): string => {
   if (process.env.NODE_ENV === "PRODUCTION") {
     return process.env.DB_URI || "";
   } else {
-    return "mongodb://0.0.0.0:27017/capi-local";
+    return "mongodb://0.0.0.0:27017/cfgx-local";
   }
 };
 

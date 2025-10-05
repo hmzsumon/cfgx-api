@@ -6,7 +6,6 @@
 ──────────────────────────────────────────────────────────── */
 import Account from "@/models/Account.model";
 import Position from "@/models/position.model";
-import { User } from "@/models/user.model";
 import { getTopOfBook } from "@/services/quote.service";
 import { getContractSpec, isValidLot } from "@/services/specs.service";
 import { typeHandler } from "@/types/express";
@@ -17,12 +16,19 @@ import mongoose from "mongoose";
 const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
 
 /* util */
-const round = (v: number, d = 2) => +v.toFixed(d);
+
 const normalizeSymbol = (sym: string) => {
   let s = sym.trim().toUpperCase().replace("/", "");
   if (s.endsWith("USD")) s = s.replace("USD", "USDT"); // UI BTC/USD -> BTCUSDT
   return s;
 };
+
+// ---- helpers
+const round = (n: number, d = 2) =>
+  Number.isFinite(n) ? Number(n.toFixed(d)) : n;
+
+const tickFromDigits = (d: number) => Number((1 / 10 ** d).toFixed(d));
+const roundToTick = (n: number, t: number) => Math.round(n / t) * t;
 
 /* types */
 type PlaceOrderBody = {
@@ -30,17 +36,14 @@ type PlaceOrderBody = {
   symbol: string; // UI or raw
   side: "buy" | "sell";
   lots: number;
-  price?: number; // optional client hint
+  price: number; // optional client hint
   maxSlippageBps?: number; // optional, e.g. 20 = 0.20%
 };
 
 /* ── Place market order (DEMO) ───────────────────────────── */
 export const placeMarketOrder: typeHandler = catchAsync(async (req, res) => {
-  const userId = req.user?._id;
+  const userId = (req as any).user?._id;
   if (!userId) throw new ApiError(401, "User not authenticated");
-
-  const user = await User.findById(userId);
-  if (!user) throw new ApiError(404, "User not found");
 
   const {
     accountId,
@@ -51,74 +54,87 @@ export const placeMarketOrder: typeHandler = catchAsync(async (req, res) => {
     maxSlippageBps,
   } = (req.body || {}) as PlaceOrderBody;
 
-  if (!accountId || !uiSymbol || !side || !lots) {
+  if (!accountId || !uiSymbol || !side || !lots)
     throw new ApiError(400, "Missing required fields");
-  }
+  if (side !== "buy" && side !== "sell")
+    throw new ApiError(400, "Invalid side");
+  if (!(typeof lots === "number" && lots > 0))
+    throw new ApiError(400, "Invalid lot size");
 
-  // ownership + active
+  // ---- ownership + active (demo-only gate)
   const acc = await Account.findOne({ _id: accountId, userId });
   if (!acc) throw new ApiError(404, "Account not found");
   if (acc.status !== "active") throw new ApiError(400, "Account not active");
   if (acc.mode !== "demo")
     throw new ApiError(400, "Only demo accounts can trade now");
 
-  // normalize + spec
+  // ---- normalize + spec + lot validation
   const symbol = normalizeSymbol(uiSymbol);
-  const spec = getContractSpec(symbol); // must return contractSize=1 for crypto
-  if (!isValidLot(lots, spec.minLot, spec.stepLot, spec.maxLot)) {
+  const spec = getContractSpec(symbol); // crypto => contractSize=1
+  if (!isValidLot(lots, spec.minLot, spec.stepLot, spec.maxLot))
     throw new ApiError(400, "Invalid lot size");
-  }
 
-  // authoritative price
+  // ---- server quote (for sanity guard only)
   const q = await getTopOfBook(symbol);
-  const execPrice = side === "buy" ? q.ask : q.bid;
-  if (!Number.isFinite(execPrice) || execPrice <= 0) {
+  const qSide = side === "buy" ? q.ask : q.bid;
+  if (!Number.isFinite(qSide) || qSide <= 0)
     throw new ApiError(503, "Price unavailable");
-  }
 
-  // optional slippage check vs client hint
-  if (price && maxSlippageBps && maxSlippageBps > 0) {
-    const diff = Math.abs(execPrice - price) / price;
+  // ---- client price => authoritative entry (rounded to tick)
+  if (!Number.isFinite(price) || price <= 0)
+    throw new ApiError(400, "Invalid client price");
+  const tick = tickFromDigits(spec.digits);
+  const entryPrice = roundToTick(price, tick);
+
+  // ---- drift/tolerance vs server quote (rounded entry used)
+  const tolBps = Number(process.env.UI_PRICE_TOL_BPS ?? 50); // e.g. 0.50%
+  const drift = Math.abs(entryPrice - qSide) / qSide;
+  if (drift > tolBps / 10_000)
+    throw new ApiError(400, "Client price out of range");
+
+  // ---- optional extra slippage guard (redundant but ok)
+  if (maxSlippageBps && maxSlippageBps > 0) {
+    const diff = Math.abs(qSide - entryPrice) / entryPrice;
     const max = maxSlippageBps / 10_000;
     if (diff > max)
       throw new ApiError(400, "Price changed (slippage exceeded)");
   }
 
-  // margin/commission
+  // ---- margin/commission (✅ entryPrice-based)
   const leverage = Math.max(1, acc.leverage || 1);
-  const notional = execPrice * spec.contractSize * lots;
+  const notional = entryPrice * spec.contractSize * lots;
   const margin = notional / leverage;
   const commissionOpen = spec.commissionPerLot * lots;
 
   const equity = acc.equity ?? acc.balance ?? 0;
   const marginUsed = acc.marginUsed ?? 0;
   const freeMargin = equity - marginUsed;
-  if (freeMargin < margin + commissionOpen) {
+  if (freeMargin < margin + commissionOpen)
     throw new ApiError(400, "Insufficient margin");
-  }
 
-  // create position
+  // ---- create position
   const pos = await Position.create({
     accountId: acc._id,
     userId,
-    customerId: user.customerId,
+    customerId: (req as any).user?.customerId,
     symbol,
     side,
     lots,
-    contractSize: spec.contractSize, // crypto=1
-    entryPrice: execPrice, // number
+    contractSize: spec.contractSize,
+    entryPrice, // ✅ UI authoritative
     margin,
     commissionOpen,
     status: "open",
     openedAt: new Date(),
   });
 
-  // account snapshot (demo)
+  // ---- demo snapshot
   acc.marginUsed = round(marginUsed + margin, 2);
   acc.balance = round((acc.balance ?? 0) - commissionOpen, 2);
   acc.equity = acc.balance;
   await acc.save();
 
+  // ---- response
   res.status(201).json({
     success: true,
     position: {
@@ -142,7 +158,7 @@ export const placeMarketOrder: typeHandler = catchAsync(async (req, res) => {
       leverage: acc.leverage,
       currency: acc.currency,
     },
-    quote: { bid: q.bid, ask: q.ask, ts: q.ts },
+    quote: { bid: q.bid, ask: q.ask, ts: q.ts }, // telemetry
   });
 });
 

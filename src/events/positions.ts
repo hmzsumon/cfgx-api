@@ -51,6 +51,10 @@ export function emitPositionOpened(
   io.to(String(pos.userId)).emit("position:opened", payload);
   // (ঐচ্ছিক) অ্যাকাউন্ট রুম
   io.to(`account:${String(pos.accountId)}`).emit("position:opened", payload);
+
+  // ✅ add this line
+  io.emit("position:opened", payload);
+
   // (ঐচ্ছিক) গ্লোবাল চ্যানেল (অ্যাডমিন/মনিটরিং)
   io.emit("position:opened:all", payload);
 }
