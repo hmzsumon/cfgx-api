@@ -5,6 +5,7 @@ import {
   changePhone,
   checkEmailExist,
   claimGenerationReward,
+  getDashboardData,
   getInviteData,
   getMyAssetDetails,
   getMyTeamMembers,
@@ -108,5 +109,7 @@ router.put("/security-pin", isAuthenticatedUser, upsertUserSecurityPin);
 /* ──────────secured endpoints  ────────── */
 router.put("/account/email", isAuthenticatedUser, changeEmail);
 router.put("/account/phone", isAuthenticatedUser, changePhone);
+
+router.get("/dashboard-data", isAuthenticatedUser, getDashboardData);
 
 export default router;

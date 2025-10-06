@@ -27,27 +27,7 @@ import jwt, { JwtPayload, Secret } from "jsonwebtoken";
 import { Types } from "mongoose";
 import { StringValue } from "ms";
 
-// 🔐 Setup cookie for refresh token – call this inside login/register
-// export const sendRefreshToken = (userId: string, res: Response) => {
-// 	const refreshExpiresIn: StringValue = (process.env.JWT_REFRESH_EXPIRE ||
-// 		'7d') as StringValue;
-
-// 	const refreshToken = jwt.sign(
-// 		{ id: userId },
-// 		process.env.JWT_REFRESH_SECRET as Secret,
-// 		{ expiresIn: refreshExpiresIn }
-// 	);
-
-// 	res.cookie('refresh_token', refreshToken, {
-// 		httpOnly: true,
-// 		secure: process.env.NODE_ENV === 'PRODUCTION',
-// 		sameSite: 'lax',
-// 		path: '/api/v1/refresh-token',
-// 		expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-// 	});
-// };
-
-// 🔐 Register user
+/* ── 🔐 Register user ───────────────────────────────── */
 export const registerUser: typeHandler = catchAsync(async (req, res, next) => {
   const {
     email,
@@ -357,6 +337,7 @@ export const loadUser: typeHandler = catchAsync(async (req, res, next) => {
   });
 });
 
+/* ── 🔐 Logout user ───────────────────────────────── */
 export const logoutUser: typeHandler = catchAsync(async (_req, res) => {
   res.clearCookie("sw99_token");
   res.clearCookie("sw99_refresh_token", { path: "/" });
@@ -977,3 +958,21 @@ export const changePassword = catchAsync(async (req, res, next) => {
     .status(200)
     .json({ success: true, message: "Password changed successfully" });
 });
+
+/* ────────── Get logged in use dashboard data ────────── */
+export const getDashboardData: typeHandler = catchAsync(
+  async (req, res, next) => {
+    const userId = req.user?._id;
+    if (!userId) return next(new ApiError(401, "User not authenticated"));
+
+    /* ────────── Get user wallet────────── */
+    const userWallet = await UserWallet.findOne({ userId });
+    if (!userWallet) return next(new ApiError(404, "User wallet not found"));
+
+    res.status(200).json({
+      success: true,
+      walletData: userWallet,
+      message: "Dashboard data retrieved successfully",
+    });
+  }
+);
