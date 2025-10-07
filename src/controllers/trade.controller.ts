@@ -65,8 +65,6 @@ export const placeMarketOrder: typeHandler = catchAsync(async (req, res) => {
   const acc = await Account.findOne({ _id: accountId, userId });
   if (!acc) throw new ApiError(404, "Account not found");
   if (acc.status !== "active") throw new ApiError(400, "Account not active");
-  if (acc.mode !== "demo")
-    throw new ApiError(400, "Only demo accounts can trade now");
 
   // ---- normalize + spec + lot validation
   const symbol = normalizeSymbol(uiSymbol);
