@@ -25,10 +25,10 @@ export const applySponsorBonus = async ({
     }
 
     /* ────────── Check if sponsor is active ai trade ────────── */
-    // if (!sponsor.is_active_aiTrade) {
-    //   console.error(`Sponsor ${sponsor.customerId} is not active.`);
-    //   return;
-    // }
+    if (!sponsor.is_active_aiTrade) {
+      console.error(`Sponsor ${sponsor.customerId} is not active.`);
+      return;
+    }
 
     /* ────────── calculate sponsor bonus if amount < 100 = 2USDT or > 100 5 usdt ────────── */
     let bonus = 0;
