@@ -5,7 +5,7 @@ import { catchAsync } from "@/utils/catchAsync";
 /* ── get logged in user transactions ───────────────────────────────── */
 export const getMyTransactions = catchAsync(async (req, res, next) => {
   const userId = req.user?._id;
-  console.log(userId);
+
   if (!userId) {
     return next(new ApiError(401, "User not authenticated"));
   }

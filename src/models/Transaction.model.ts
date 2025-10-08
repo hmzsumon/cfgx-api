@@ -11,6 +11,7 @@ export type TransactionPurpose =
   | "Generation Bonus"
   | "Level Bonus"
   | "Receive Money"
+  | "Send Money"
   | "Transfer"
   | "Company Bonus"
   | "Profit"
@@ -94,6 +95,7 @@ const transactionSchema = new Schema<ITransaction>(
         "Generation Bonus",
         "Level Bonus",
         "Receive Money",
+        "Send Money",
         "Transfer",
         "Company Bonus",
         "Profit",

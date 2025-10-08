@@ -23,6 +23,11 @@ import { catchAsync } from "@/utils/catchAsync";
 import { generateUniqueId } from "@/utils/generateCustomerId";
 import { sendTokenWithRefresh } from "@/utils/sendTokenWithRefresh";
 import TransactionManager from "@/utils/TransactionManager";
+import {
+  isEmailLike,
+  normalizeCustomerId,
+  normalizeEmail,
+} from "@/utils/validate";
 import jwt, { JwtPayload, Secret } from "jsonwebtoken";
 import { Types } from "mongoose";
 import { StringValue } from "ms";
@@ -976,3 +981,34 @@ export const getDashboardData: typeHandler = catchAsync(
     });
   }
 );
+
+/* ────────── lookupUser with optional via override ────────── */
+
+export const lookupUser: typeHandler = catchAsync(async (req, res, next) => {
+  const raw = String(req.body?.query || "").trim();
+  console.log(raw);
+  const viaIn = req.body?.via as "email" | "customerId" | undefined;
+
+  if (!raw) return next(new ApiError(400, "Query is required"));
+
+  // manual override first; otherwise auto-detect
+  const via: "email" | "customerId" =
+    viaIn ?? (isEmailLike(raw) ? "email" : "customerId");
+
+  const filter =
+    via === "email"
+      ? { email: normalizeEmail(raw) }
+      : { customerId: normalizeCustomerId(raw) };
+  console.log(filter);
+  const user = await User.findOne(filter).select({
+    _id: 1,
+    name: 1,
+    email: 1,
+    phone: 1,
+    customerId: 1,
+  });
+
+  if (!user) return next(new ApiError(404, "User not found"));
+
+  res.status(200).json({ success: true, via, user });
+});

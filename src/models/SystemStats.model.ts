@@ -102,6 +102,9 @@ export interface ISystemStats extends Document {
   withdrawReserve: number;
   maintenanceReserve: number;
   isProfitEnabled: boolean;
+
+  totalUserToUserTransfer: number;
+  todayUserToUserTransfer: number;
 }
 
 const systemStatsSchema = new Schema<ISystemStats>(
@@ -202,6 +205,9 @@ const systemStatsSchema = new Schema<ISystemStats>(
 
     withdrawReserve: { type: Number, default: 0 },
     maintenanceReserve: { type: Number, default: 0 },
+
+    totalUserToUserTransfer: { type: Number, default: 0 },
+    todayUserToUserTransfer: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

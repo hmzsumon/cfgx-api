@@ -17,6 +17,7 @@ import {
   loadUser,
   loginUser,
   logoutUser,
+  lookupUser,
   refreshAccessToken,
   registerUser,
   resendVerificationEmail,
@@ -45,7 +46,7 @@ router.post("/login", loginUser);
 router.post("/logout", logoutUser);
 router.get("/refresh-token", refreshAccessToken);
 
-// send money
+/* ────────── Send USDT ────────── */
 router.post("/send-usdt", isAuthenticatedUser, sendMoney);
 
 // check isEmail exists or not
@@ -111,5 +112,8 @@ router.put("/account/email", isAuthenticatedUser, changeEmail);
 router.put("/account/phone", isAuthenticatedUser, changePhone);
 
 router.get("/dashboard-data", isAuthenticatedUser, getDashboardData);
+
+/* ────────── User lookup ────────── */
+router.post("/user-lookup", isAuthenticatedUser, lookupUser);
 
 export default router;

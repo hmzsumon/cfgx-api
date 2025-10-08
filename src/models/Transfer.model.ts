@@ -13,7 +13,7 @@ const TransferSchema = new Schema(
     toKind: { type: String, enum: ["main", "account"], required: true },
 
     amount: { type: Number, required: true },
-    currency: { type: String, default: "USD" },
+    currency: { type: String, default: "USDT" },
     status: { type: String, default: "done" },
     createdAt: { type: Date, default: Date.now },
   },
