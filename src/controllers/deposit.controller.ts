@@ -1,4 +1,5 @@
 import { AdminNotification } from "@/models/AdminNotification.model";
+import AgentStatus from "@/models/AgentStatus.model";
 import { Deposit } from "@/models/Deposit.model";
 import { Notification } from "@/models/Notification.model";
 import SystemStats from "@/models/SystemStats.model";
@@ -9,10 +10,8 @@ import { sendEmail } from "@/services/email/emailService";
 import { depositTemplate } from "@/services/email/templates/depositTemplate";
 import { typeHandler } from "@/types/express";
 import { ApiError } from "@/utils/ApiError";
-import { applySponsorBonus } from "@/utils/applySponsorBonus";
 import { catchAsync } from "@/utils/catchAsync";
 import TransactionManager from "@/utils/TransactionManager";
-import updateTeamActiveUsers from "@/utils/updateTeamActiveUsers";
 import updateTeamSales from "@/utils/updateTeamSales";
 import { v4 as uuidv4 } from "uuid";
 
@@ -94,7 +93,7 @@ export const createDepositWithBlockBee: typeHandler = catchAsync(
   }
 );
 
-// handle callback from BlockBee
+/* ──── handle callback from BlockBee ──────────────────────── */
 export const handleBlockBeeCallback: typeHandler = catchAsync(
   async (req, res, next) => {
     const depositId = req.params.id;
@@ -144,6 +143,13 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
 
       const company = await SystemStats.findOne();
       if (!company) return next(new ApiError(404, "Company stats not found"));
+      /* ────────── get Agent Summary ────────── */
+      const agent = await AgentStatus.findOne({ agentId: user.agentId });
+
+      if (!agent) {
+        return next(new ApiError(404, "Agent not found"));
+      }
+
       const activeAmount = user.m_balance + amount;
 
       user.m_balance += amount;
@@ -152,7 +158,7 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
       if (activeAmount >= 30 && !user.is_active) {
         user.is_active = true;
         user.activeAt = new Date();
-        await updateTeamActiveUsers(user._id as string);
+        // await updateTeamActiveUsers(user._id as string);
         company.users.activeToday += 1;
         company.users.activeTotal += 1;
       }
@@ -172,13 +178,9 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
       company.costs.charge += charge;
       await company.save();
 
-      if (amount >= 100) {
-        await applySponsorBonus({
-          userName: user.name,
-          sponsorId: user.sponsorId as any,
-          amount,
-        });
-      }
+      agent.totalDeposits += amount;
+      agent.toDayDeposits += amount;
+      await agent.save();
 
       const admin = await User.findOne({ role: "admin" });
       const notifyText = `You have successfully deposited ${amount} USDT.`;

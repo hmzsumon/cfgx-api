@@ -33,7 +33,7 @@ export interface IUserWallet extends Document {
   rebateToday: number;
   totalSponsorBonus: number; // Optional field for sponsor bonuses
 
-  totalReferBonus: number;
+  totalReferralBonus: number;
 
   // Ai trade
   totalAiTradeProfit: number;
@@ -83,7 +83,7 @@ const walletSchema = new Schema<IUserWallet>(
     totalDepositBonus: { type: Number, default: 0 },
     totalGameBonus: { type: Number, default: 0 },
 
-    totalReferBonus: { type: Number, default: 0 },
+    totalReferralBonus: { type: Number, default: 0 },
     rankEarning: { type: Number, default: 0 },
 
     // Ai trade

@@ -103,7 +103,7 @@ export const sendMoney: typeHandler = catchAsync(async (req, res, next) => {
     );
     recipientWalletDone = true;
 
-    /* ────────── transactions ────────── */
+    /* ────────── cash out transactions ────────── */
     await txManager.createTransaction({
       userId: String(sender._id),
       customerId: sender.customerId,

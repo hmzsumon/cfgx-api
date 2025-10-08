@@ -6,6 +6,7 @@ export type TransactionPurpose =
   | "Deposit"
   | "Withdraw Request"
   | "Withdraw Completed"
+  | "Referral Bonus"
   | "Buy Lottery"
   | "Global Bonus"
   | "Generation Bonus"
@@ -36,6 +37,7 @@ export type TransactionPurpose =
   | "Game Betting"
   | "Ai Trade Profit"
   | "Ai Trade Commission"
+  | "Create Ai Account"
   | "game:bet"
   | "game:win"
   | "game:refund"
@@ -90,6 +92,7 @@ const transactionSchema = new Schema<ITransaction>(
         "Deposit",
         "Withdraw Request",
         "Withdraw Completed",
+        "Referral Bonus",
         "Buy Lottery",
         "Global Bonus",
         "Generation Bonus",
@@ -126,6 +129,7 @@ const transactionSchema = new Schema<ITransaction>(
         "game:payout",
         "Ai Trade Profit",
         "Ai Trade Commission",
+        "Create Ai Account",
       ],
       required: true,
     },

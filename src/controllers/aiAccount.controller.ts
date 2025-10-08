@@ -10,50 +10,17 @@ import { getTopOfBook } from "@/services/quote.service";
 import { getContractSpec, isValidLot } from "@/services/specs.service";
 import { typeHandler } from "@/types/express";
 import { ApiError } from "@/utils/ApiError";
+import { applySponsorBonus } from "@/utils/applySponsorBonus";
 import { catchAsync } from "@/utils/catchAsync";
 import { generateAccountNumber } from "@/utils/generateAccountNumber";
+import TransactionManager from "@/utils/TransactionManager";
+import updateTeamAiTradeInfo from "@/utils/updateTeamAiTradeInfo";
 
 function assertAllowedLeverage(t: TAccountType, lv: number) {
   const ok = ACCOUNT_TYPES[t].allowedLeverages.includes(lv);
   if (!ok)
     throw new ApiError(400, "Leverage not allowed for this account type");
 }
-
-/* ── Create AI Account ───────────────────────────────── */
-export const createAiAccount2: typeHandler = catchAsync(async (req, res) => {
-  const userId = req.user!._id;
-  const user = await User.findById(userId);
-  if (!user) throw new ApiError(404, "User not found");
-
-  const { plan, amount } = req.body as {
-    plan: string;
-    amount: number;
-  };
-
-  /* ────────── check user m_balance ────────── */
-  if (user.m_balance < amount) {
-    throw new ApiError(400, "Insufficient balance");
-  }
-
-  const accountNumber = await generateAccountNumber();
-
-  const acc = await Account.create({
-    userId,
-    customerId: user.customerId,
-    accountNumber,
-    plan,
-    balance: amount,
-    equity: amount,
-    role: user.role,
-    planPrice: amount,
-  });
-
-  /* ────────── Update user balance ────────── */
-  user.m_balance = user.m_balance - amount;
-  await user.save();
-
-  res.status(201).json({ success: true, account: acc });
-});
 
 // ── Create AI Account (no session; atomic debit + compensation) ─────────
 export const createAiAccount: typeHandler = catchAsync(async (req, res) => {
@@ -64,19 +31,18 @@ export const createAiAccount: typeHandler = catchAsync(async (req, res) => {
     amount: number;
   };
 
-  // ── basic validation
+  /* ────────── check user m_balance ────────── */
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
     throw new ApiError(400, "Invalid amount");
   }
 
-  // ভাসমান-বিন্দুর ভুল এড়াতে ২-ডেসিমাল রাউন্ড
   const debit = Math.round(amt * 100) / 100;
 
-  // 1) অ্যাটমিক ডেবিট (single-doc atomic) — এখানে সেশন দরকার নেই।
+  // Atomic debit (must have sufficient balance)
   const user = await User.findOneAndUpdate(
-    { _id: userId, m_balance: { $gte: debit } }, // পর্যাপ্ত ব্যালেন্স আছে?
-    { $inc: { m_balance: -debit } }, // ব্যালেন্স কাটো
+    { _id: userId, m_balance: { $gte: debit } },
+    { $inc: { m_balance: -debit } },
     { new: true }
   );
 
@@ -84,11 +50,13 @@ export const createAiAccount: typeHandler = catchAsync(async (req, res) => {
     throw new ApiError(400, "Insufficient balance");
   }
 
+  let createdAccountId: string | null = null;
+  let createdAccountNumber: string | null = null;
+
   try {
-    // 2) অ্যাকাউন্ট তৈরি (যদি এখানে ব্যর্থ হয় → নিচে রিফান্ড করব)
     const accountNumber = await generateAccountNumber();
 
-    await Account.create({
+    const account = await Account.create({
       userId,
       customerId: user.customerId,
       accountNumber,
@@ -101,17 +69,54 @@ export const createAiAccount: typeHandler = catchAsync(async (req, res) => {
       mode: "ai",
     });
 
-    // (optional) এখানে চাইলে Ledger/Transaction log লিখতে পারো
+    createdAccountId = account._id?.toString?.() ?? null;
+    createdAccountNumber = accountNumber;
 
-    // 3) success response
+    // ── Set is_active_aiTrade = true if currently false ───────────────
+    // This is done *after* account creation; if this fails we compensate below.
+    await User.updateOne(
+      { _id: userId, is_active_aiTrade: false },
+      { $set: { is_active_aiTrade: true } }
+    );
+
+    await updateTeamAiTradeInfo(userId as string, debit);
+    await applySponsorBonus({
+      userName: user.name,
+      sponsorId: user.sponsorId as any,
+      amount,
+      plan,
+    });
+    // non-blocking
+    // void updateTeamAiTradeInfo(userId, debit);
+
+    /* ────────── cash out transactions ────────── */
+    const txManager = new TransactionManager();
+    await txManager.createTransaction({
+      userId: String(user._id),
+      customerId: user.customerId,
+      transactionType: "cashOut",
+      amount: debit,
+      purpose: "Create Ai Account",
+      description: `Created AI account for ${amount} USDT in ${plan} ai plan`,
+    });
+
+    // Success response
     return res.status(201).json({
       success: true,
       message: "AI account created",
     });
   } catch (err) {
-    // 4) compensation (রিফান্ড) — অ্যাকাউন্ট ক্রিয়েট ব্যর্থ হলে কাটার টাকা ফেরত দাও
+    // Compensation: refund debit
     await User.updateOne({ _id: userId }, { $inc: { m_balance: debit } });
-    throw err; // আসল ভুলটাকেই উপরে ছুঁড়ে দাও
+
+    // If an account was created but something else failed (e.g., flag set), remove the account
+    if (createdAccountId) {
+      await Account.deleteOne({ _id: createdAccountId });
+    } else if (createdAccountNumber) {
+      await Account.deleteOne({ userId, accountNumber: createdAccountNumber });
+    }
+
+    throw err;
   }
 });
 

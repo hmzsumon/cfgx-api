@@ -81,6 +81,9 @@ export interface IUser extends Document {
   is_bind_wallet: boolean;
   due_amount: number;
   is_payment_method_added: boolean;
+
+  is_active_aiTrade: boolean;
+
   fcm_tokens: string[];
   sponsorId?: mongoose.Types.ObjectId | null;
   sponsorName?: string;
