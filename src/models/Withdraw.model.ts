@@ -10,11 +10,8 @@ export interface IWithdraw extends Document {
   amount: number;
   netAmount: number; // Amount after deducting fees
   charge: number;
-  method: {
-    name: string; // e.g., 'BKash' 'Nagad', 'Bank Transfer', 'Rocket'
-    accountNumber: string; // e.g., '1234567890'
-  };
-
+  netWork: string;
+  netWorkAddress: string;
   approvedAmount: number;
   txnId: string;
   agentNumber: string;
@@ -79,13 +76,16 @@ const withdrawSchema = new Schema<IWithdraw>(
       default: 0,
       required: true,
     },
-    method: {
-      type: {
-        name: { type: String, required: true },
-        accountNumber: { type: String, required: true },
-      },
+
+    netWork: {
+      type: String,
       required: true,
     },
+    netWorkAddress: {
+      type: String,
+      required: true,
+    },
+
     status: {
       type: String,
       enum: [

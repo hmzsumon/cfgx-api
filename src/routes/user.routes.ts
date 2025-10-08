@@ -22,8 +22,10 @@ import {
   registerUser,
   resendVerificationEmail,
   resetForgotPassword,
+  sendOtpToEmail,
   upsertUserSecurityPin,
   verifyEmail,
+  verifyOtp,
   verifyOtpForPassword,
 } from "@/controllers/user.controller";
 import { sendMoney } from "@/controllers/wallet.controller";
@@ -37,7 +39,7 @@ router.post("/register", registerUser);
 // verify email
 router.post("/verify-email", verifyEmail);
 
-// resend verification email
+/* ────────── resend verification email ────────── */
 router.post("/resend-verification-email", resendVerificationEmail);
 // load user
 router.get("/load-user", isAuthenticatedUser, loadUser);
@@ -115,5 +117,11 @@ router.get("/dashboard-data", isAuthenticatedUser, getDashboardData);
 
 /* ────────── User lookup ────────── */
 router.post("/user-lookup", isAuthenticatedUser, lookupUser);
+
+/* ────────── Send OTP ────────── */
+router.post("/send-otp-to-email", isAuthenticatedUser, sendOtpToEmail);
+
+/* ────────── Verify OTP ────────── */
+router.post("/verify-otp", isAuthenticatedUser, verifyOtp);
 
 export default router;

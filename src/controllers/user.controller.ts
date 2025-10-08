@@ -270,11 +270,11 @@ export const checkEmailExist: typeHandler = catchAsync(
   }
 );
 
-//
 /* ────────── resend verification email ────────── */
 export const resendVerificationEmail: typeHandler = catchAsync(
   async (req, res, next) => {
     const { email } = req.body;
+    console.log(email);
 
     if (!email) {
       return next(new ApiError(400, "Email is required"));
@@ -307,6 +307,70 @@ export const resendVerificationEmail: typeHandler = catchAsync(
     });
   }
 );
+
+/* ────────── resend send otp code to  email ────────── */
+export const sendOtpToEmail: typeHandler = catchAsync(
+  async (req, res, next) => {
+    const { email } = req.body;
+
+    if (!email) {
+      return next(new ApiError(400, "Email is required"));
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return next(new ApiError(404, "The user with this email does not exist"));
+    }
+
+    if (!user.verify_code) {
+      user.verify_code = Math.floor(100000 + Math.random() * 900000).toString();
+      await user.save();
+    }
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?code=${
+      user.verify_code
+    }&email=${encodeURIComponent(email)}`;
+    const emailContent = emailVerificationTemplate(
+      String(user.verify_code),
+      verificationUrl
+    );
+    await sendEmail({
+      email: user.email,
+      subject: "Email Verification - Capitalise CGFX",
+      html: emailContent,
+    });
+    res.status(200).json({
+      success: true,
+      message: "Verification email resent. Please check your inbox.",
+    });
+  }
+);
+
+/* ────────── Verify otp ────────── */
+export const verifyOtp: typeHandler = catchAsync(async (req, res, next) => {
+  const { otp, email } = req.body;
+
+  if (!otp || !email) {
+    return next(new ApiError(400, "OTP and email are required"));
+  }
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    return next(new ApiError(404, "User not found"));
+  }
+
+  if (user.verify_code !== otp) {
+    return next(new ApiError(400, "Invalid OTP"));
+  }
+
+  user.email_verified = true;
+  user.verify_code = ""; // Clear the verification code after successful verification
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "OTP verified successfully",
+  });
+});
 
 // 🔐 Login user
 export const loginUser: typeHandler = catchAsync(async (req, res, next) => {

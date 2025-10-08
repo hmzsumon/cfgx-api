@@ -19,9 +19,16 @@ export const newWithdrawRequest: typeHandler = catchAsync(
   async (req, res, next) => {
     const userId = req.user?._id;
 
-    const { amount, method, pass } = req.body;
+    const { amount, withdrawAddress, network, withdrawFee, receiptAmount } =
+      req.body;
 
-    if (!amount || !method || !pass) {
+    if (
+      !amount ||
+      !withdrawAddress ||
+      !network ||
+      !withdrawFee ||
+      !receiptAmount
+    ) {
       return next(new ApiError(400, "All fields are required"));
     }
 
@@ -34,19 +41,13 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       return next(new ApiError(404, "User not found"));
     }
 
-    /* ────────── check User is complete vet volume ────────── */
-
-    if (!user.is_complete_bet_volume) {
-      return next(new ApiError(400, "User is not complete vet volume"));
-    }
-
     const admin = await User.findOne({ role: "admin" });
     if (!admin) {
       return next(new ApiError(404, "Admin user not found"));
     }
 
     /* ────────── get agent status by user agentId ────────── */
-    const agentStatus = await AgentStatus.findOne({
+    let agentStatus = await AgentStatus.findOne({
       agentId: user.agentId,
     }).select("toDayDeposits totalDeposits");
     if (!agentStatus) {
@@ -95,7 +96,10 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       customerId: user.customerId,
       amount: numAmount,
       netAmount: amount,
-      method: method,
+      netWork: network,
+      netWorkAddress: withdrawAddress,
+      charge: withdrawFee,
+      agentNumber: user.agentId,
       status: "pending",
     });
 
@@ -357,7 +361,7 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
       name: user.name,
       amount: withdraw.amount,
       txId: withdraw._id as string,
-      walletAddress: withdraw.method.name,
+      walletAddress: withdraw.netWorkAddress,
     });
 
     // await sendEmail({
