@@ -3,19 +3,25 @@
    - GET  /transfer/accounts    → ইউজারের অ্যাকাউন্ট লিস্ট + ব্যালেন্স
    - POST /transfer             → ইনটার্নাল ট্রান্সফার (ভিতরে-ভিতরে)
 ─────────────────────────────────────────────────────────── */
+
 import Account from "@/models/Account.model";
-import Transfer from "@/models/Transfer.model"; // new model নিচে
+import Transfer from "@/models/Transfer.model";
 import { User } from "@/models/user.model";
 import { ApiError } from "@/utils/ApiError";
 import { catchAsync } from "@/utils/catchAsync";
+import updateTeamLiveTradeInfo from "@/utils/updateTeamLiveTradeInfo";
 
+/* ────────── helpers ────────── */
 const round2 = (n: number) => +Number(n).toFixed(2);
 
+/* ────────── GET /transfer/accounts ────────── */
 export const listMyAccountsLite = catchAsync(async (req, res) => {
   const userId = req.user?._id;
+
   const rows = await Account.find({ userId }).select(
     "_id title number type currency balance equity marginUsed accountNumber"
   );
+
   const items = rows.map((a: any) => {
     const equity = Number(a.equity ?? a.balance ?? 0);
     const used = Number(a.marginUsed ?? 0);
@@ -31,23 +37,23 @@ export const listMyAccountsLite = catchAsync(async (req, res) => {
       marginRatio: +marginRatio.toFixed(2),
     };
   });
+
   res.json({ success: true, items });
 });
 
-/**
- * POST /transfer  (internal)
+/* ────────── POST /transfer (internal) ──────────
  * body: { fromId: string|'main', toId: string|'main', amount: number }
  * Rules:
  *  - fromId !== toId
  *  - if transferring OUT of an account → margin ratio >= 150%
  *  - currency must match (simple)
  *  - supports Main balance (user.m_balance) on either side without DB session/txn
- */
-/**
- * POST /transfer
- * body: { fromId: string|'main', toId: string|'main', amount: number }
- */
+ *  - ONLY call updateTeamLiveTradeInfo when main is involved
+ *    - fromId === 'main' → +amount
+ *    - toId   === 'main' → -amount
+──────────────────────────────────────────────────────────── */
 export const createInternalTransfer = catchAsync(async (req, res) => {
+  /* ────────── auth & input ────────── */
   const userId = req.user?._id;
   if (!userId) throw new ApiError(401, "Unauthenticated");
 
@@ -65,11 +71,10 @@ export const createInternalTransfer = catchAsync(async (req, res) => {
     throw new ApiError(400, "Invalid amount");
   }
 
-  // Load user
+  /* ────────── load user & accounts ────────── */
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
-  // Load accounts only if not 'main'
   const fromAcc =
     fromId !== "main" ? await Account.findOne({ _id: fromId, userId }) : null;
   const toAcc =
@@ -80,19 +85,19 @@ export const createInternalTransfer = catchAsync(async (req, res) => {
   if (toId !== "main" && !toAcc)
     throw new ApiError(404, "To account not found");
 
-  // Currency check (simple)
+  /* ────────── currency check ────────── */
   const fromCurrency = fromAcc?.currency || "USD";
   const toCurrency = toAcc?.currency || "USD";
   if (fromCurrency !== toCurrency) throw new ApiError(400, "Currency mismatch");
 
-  // Source balance
+  /* ────────── source balance check ────────── */
   const fromBalance =
     fromId === "main"
       ? Number(user.m_balance || 0)
       : Number(fromAcc?.balance || 0);
   if (fromBalance < amt) throw new ApiError(400, "Insufficient funds");
 
-  // Margin ratio rule if transferring OUT of a trading account
+  /* ────────── margin ratio rule (OUT of an account) ────────── */
   if (fromAcc) {
     const equity = Number(fromAcc.equity ?? fromAcc.balance ?? 0);
     const used = Number(fromAcc.marginUsed ?? 0);
@@ -100,7 +105,7 @@ export const createInternalTransfer = catchAsync(async (req, res) => {
     if (ratio < 150) throw new ApiError(400, "Margin ratio < 150%");
   }
 
-  // Apply balances (no session; demo-safe)
+  /* ────────── apply debits/credits (no session; demo-safe) ────────── */
   if (fromId === "main") {
     user.m_balance = round2((user.m_balance || 0) - amt);
   } else if (fromAcc) {
@@ -112,17 +117,36 @@ export const createInternalTransfer = catchAsync(async (req, res) => {
     user.m_balance = round2((user.m_balance || 0) + amt);
   } else if (toAcc) {
     toAcc.balance = round2((toAcc.balance || 0) + amt);
-    toAcc.equity = toAcc.balance;
+    toAcc.equity = toAcc.balance; // demo: equity mirrors balance
   }
 
-  // Save changed docs
+  /* ────────── persist account/user state ────────── */
   const saves: Promise<any>[] = [];
   if (fromAcc) saves.push(fromAcc.save());
   if (toAcc) saves.push(toAcc.save());
   if (fromId === "main" || toId === "main") saves.push(user.save());
   await Promise.all(saves);
 
-  // Build transfer doc WITHOUT putting "main" in ObjectId fields
+  /* ────────── team live-trade metrics (main only) ──────────
+   * - fromId === "main" → +amount
+   * - toId   === "main" → -amount
+   * - account ↔ account → no-op
+   * - clamped to non-negative inside the util
+  ─────────────────────────────────────────────────────────── */
+  try {
+    if (fromId === "main" || toId === "main") {
+      await updateTeamLiveTradeInfo(String(userId), round2(amt), fromId);
+      // non-blocking
+      // void updateTeamLiveTradeInfo(String(userId), round2(amt), fromId);
+    }
+  } catch (e) {
+    console.error(
+      "❌ Team live trade update failed:",
+      (e as any)?.message || e
+    );
+  }
+
+  /* ────────── create transfer record ────────── */
   const doc: any = {
     userId,
     amount: round2(amt),
@@ -137,6 +161,7 @@ export const createInternalTransfer = catchAsync(async (req, res) => {
 
   const tr = await Transfer.create(doc);
 
+  /* ────────── response ────────── */
   res.status(201).json({
     success: true,
     transfer: {

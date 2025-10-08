@@ -46,6 +46,9 @@ export interface IUserWallet extends Document {
   // transfer
   totalTransferToTrade: number;
   totalTransferToWallet: number;
+
+  totalAiTradeBalance: number;
+  totalLiveTradeBalance: number;
 }
 
 const walletSchema = new Schema<IUserWallet>(
@@ -97,6 +100,9 @@ const walletSchema = new Schema<IUserWallet>(
     // Transfer
     totalTransferToTrade: { type: Number, default: 0 },
     totalTransferToWallet: { type: Number, default: 0 },
+
+    totalAiTradeBalance: { type: Number, default: 0 },
+    totalLiveTradeBalance: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

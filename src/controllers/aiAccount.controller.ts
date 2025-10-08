@@ -5,7 +5,9 @@ import { ACCOUNT_TYPES, TAccountType } from "@/config/accountTypes";
 import { emitPositionOpened } from "@/events/positions";
 import Account from "@/models/AiAccount.model";
 import AiPosition from "@/models/AiPosition.model";
+import SystemStats from "@/models/SystemStats.model";
 import { User } from "@/models/user.model";
+import UserWallet from "@/models/UserWallet.model";
 import { getTopOfBook } from "@/services/quote.service";
 import { getContractSpec, isValidLot } from "@/services/specs.service";
 import { typeHandler } from "@/types/express";
@@ -99,6 +101,21 @@ export const createAiAccount: typeHandler = catchAsync(async (req, res) => {
       purpose: "Create Ai Account",
       description: `Created AI account for ${amount} USDT in ${plan} ai plan`,
     });
+
+    /* ────────── Find user wallet and update totalAiTradeBalance ────────── */
+    const wallet = await UserWallet.findOne({ _id: userId });
+    if (wallet) {
+      wallet.totalAiTradeBalance += debit;
+      await wallet.save();
+    }
+
+    /* ────────── Find company wallet and update totalAiTradeBalance ────────── */
+    const companyWallet = await SystemStats.findOne();
+    if (companyWallet) {
+      companyWallet.totalAiTradeBalance += debit;
+      companyWallet.todayAiTradeBalance += debit;
+      await companyWallet.save();
+    }
 
     // Success response
     return res.status(201).json({

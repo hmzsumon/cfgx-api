@@ -105,6 +105,12 @@ export interface ISystemStats extends Document {
 
   totalUserToUserTransfer: number;
   todayUserToUserTransfer: number;
+
+  totalAiTradeBalance: number;
+  todayAiTradeBalance: number;
+
+  totalLiveTradeBalance: number;
+  todayLiveTradeBalance: number;
 }
 
 const systemStatsSchema = new Schema<ISystemStats>(
@@ -208,6 +214,12 @@ const systemStatsSchema = new Schema<ISystemStats>(
 
     totalUserToUserTransfer: { type: Number, default: 0 },
     todayUserToUserTransfer: { type: Number, default: 0 },
+
+    totalAiTradeBalance: { type: Number, default: 0 },
+    totalLiveTradeBalance: { type: Number, default: 0 },
+
+    todayAiTradeBalance: { type: Number, default: 0 },
+    todayLiveTradeBalance: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
