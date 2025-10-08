@@ -21,6 +21,7 @@ export interface IAiPosition extends Document {
   openedAt: Date;
   closedAt?: Date;
   closePrice?: number;
+  manipulateClosePrice?: number;
   pnl?: number; // realized P/L when closed
   meta?: Record<string, any>;
   takeProfit?: number;
@@ -64,6 +65,7 @@ const aiPositionSchema = new Schema<IAiPosition>(
     openedAt: { type: Date, default: () => new Date() },
     closedAt: Date,
     closePrice: Number,
+    manipulateClosePrice: Number,
     pnl: Number,
     takeProfit: Number,
     stopLoss: Number,

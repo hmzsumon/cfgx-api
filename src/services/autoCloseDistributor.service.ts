@@ -78,6 +78,7 @@ export async function distributeOnAutoCloseSimple(posId: string) {
     openedAt: pos.openedAt ?? new Date(),
     closedAt: new Date(),
     closePrice: pos.closePrice,
+    manipulateClosePrice: pos.manipulateClosePrice,
     pnl: pos.pnl,
     takeProfit: pos.takeProfit,
     stopLoss: pos.stopLoss,

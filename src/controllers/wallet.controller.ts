@@ -8,110 +8,200 @@ import { catchAsync } from "@/utils/catchAsync";
 import TransactionManager from "@/utils/TransactionManager";
 import { num } from "../utils/money";
 
-/* ────────── Send Money ────────── */
+/* ────────── Send Money (no session; atomic debit; no double credit) ────────── */
 export const sendMoney: typeHandler = catchAsync(async (req, res, next) => {
+  /* ────────── auth ────────── */
   const sender = req.user;
   if (!sender || !sender._id) {
     return next(new ApiError(401, "User not authenticated"));
   }
 
+  /* ────────── input ────────── */
   const { amount, recipient_id } = req.body;
   if (!amount || amount <= 0 || !recipient_id) {
-    return next(new ApiError(400, "Amount is required"));
+    return next(new ApiError(400, "Amount and recipient are required"));
   }
-
-  const company = await SystemStats.findOne();
-  if (!company) return next(new ApiError(404, "Company stats not found"));
 
   const numAmount = num(amount);
-  if (isNaN(numAmount)) {
+  if (!Number.isFinite(numAmount) || numAmount <= 0) {
     return next(new ApiError(400, "Invalid amount"));
   }
-  const fee = numAmount * 0.02;
-  const grossAmount = numAmount + fee;
 
-  /* ────────── Check user balance ────────── */
+  // self-transfer block
+  if (String(recipient_id) === String(sender.customerId)) {
+    return next(new ApiError(400, "You cannot send to yourself"));
+  }
 
-  if (sender.m_balance < grossAmount) {
+  /* ────────── constants ────────── */
+  const fee = num(numAmount * 0.02);
+  const grossAmount = num(numAmount + fee);
+
+  /* ────────── fetch refs (no session) ────────── */
+  const [company, recipient, senderWallet, recipientWallet] = await Promise.all(
+    [
+      SystemStats.findOne(),
+      User.findOne({ customerId: recipient_id }),
+      Wallet.findOne({ userId: sender._id }),
+      User.findOne({ customerId: recipient_id }).then((u) =>
+        u ? Wallet.findOne({ userId: u._id }) : null
+      ),
+    ]
+  );
+
+  if (!company) return next(new ApiError(404, "Company stats not found"));
+  if (!recipient) return next(new ApiError(404, "Recipient not found"));
+  if (!senderWallet) return next(new ApiError(404, "Sender wallet not found"));
+  if (!recipientWallet)
+    return next(new ApiError(404, "Recipient wallet not found"));
+
+  /* ────────── atomic conditional DEBIT (prevents negative) ──────────
+     - only debits if sender.m_balance >= grossAmount
+     - returns the updated sender row if success; null if insufficient
+  */
+  const debited = await User.findOneAndUpdate(
+    { _id: sender._id, m_balance: { $gte: grossAmount } },
+    { $inc: { m_balance: -grossAmount } },
+    { new: true }
+  );
+
+  if (!debited) {
     return next(new ApiError(400, "Insufficient balance"));
   }
 
-  const recipient = await User.findOne({ customerId: recipient_id });
-  if (!recipient) {
-    return next(new ApiError(404, "Recipient not found"));
-  }
-
-  const senderWallet = await Wallet.findOne({ userId: sender._id });
-  if (!senderWallet) {
-    return next(new ApiError(404, "Sender wallet not found"));
-  }
-
-  const recipientWallet = await Wallet.findOne({ userId: recipient._id });
-  if (!recipientWallet) {
-    return next(new ApiError(404, "Recipient wallet not found"));
-  }
-
-  /* ────────── update sender balance ────────── */
-  sender.m_balance -= grossAmount;
-  await sender.save();
-
-  /* ────────── update sender wallet ────────── */
-  senderWallet.totalSend += numAmount;
-  await senderWallet.save();
-
-  /* ────────── update recipient balance ────────── */
-  recipient.m_balance += numAmount;
-  await recipient.save();
+  /* ────────── after-debit updates (no session) ──────────
+     - if any step throws, we best-effort rollback sender debit
+  */
   const txManager = new TransactionManager();
-  await txManager.createTransaction({
-    userId: sender._id as string,
-    customerId: sender.customerId,
-    transactionType: "cashOut",
-    amount: grossAmount,
-    purpose: "Send Money",
-    description: `Sent money to ${recipient.customerId}`,
-  });
 
-  /* ────────── update recipient balance ────────── */
-  recipient.m_balance += numAmount;
-  await recipient.save();
+  let senderWalletDone = false;
+  let recipientCredited = false;
+  let recipientWalletDone = false;
+  let companyDone = false;
+  let cashOutTxDone = false;
+  let cashInTxDone = false;
+  let notifyCreated: any = null;
 
-  await txManager.createTransaction({
-    userId: recipient._id as string,
-    customerId: recipient.customerId,
-    transactionType: "cashIn",
-    amount,
-    purpose: "Receive Money",
-    description: `Received money from ${sender.customerId}`,
-  });
+  try {
+    /* ────────── sender wallet stats ────────── */
+    await Wallet.updateOne(
+      { _id: senderWallet._id },
+      { $inc: { totalSend: numAmount } }
+    );
+    senderWalletDone = true;
 
-  /* ────────── update recipient wallet ────────── */
-  recipientWallet.totalReceive += numAmount;
-  await recipientWallet.save();
-  const userNotification = await Notification.create({
-    user_id: recipient._id,
-    role: recipient.role,
-    title: "USDT Deposit Successful",
-    category: "deposit",
-    message: `You have successfully received ${amount} USDT from ${sender.customerId}.`,
-    url: `/transactions`,
-  });
+    /* ────────── recipient CREDIT (single time) ────────── */
+    await User.updateOne(
+      { _id: recipient._id },
+      { $inc: { m_balance: numAmount } }
+    );
+    recipientCredited = true;
 
-  if (global?.io?.to) {
-    console.log(`Emitting deposit update to user ${recipient._id}`);
+    /* ────────── recipient wallet stats ────────── */
+    await Wallet.updateOne(
+      { _id: recipientWallet._id },
+      { $inc: { totalReceive: numAmount } }
+    );
+    recipientWalletDone = true;
 
-    global.io.to(String(recipient._id)).emit("user-notification", {
-      success: true,
-      message: "Deposit confirmed ✅",
-      notification: userNotification,
+    /* ────────── transactions ────────── */
+    await txManager.createTransaction({
+      userId: String(sender._id),
+      customerId: sender.customerId,
+      transactionType: "cashOut",
+      amount: grossAmount,
+      purpose: "Send Money",
+      description: `Sent ${numAmount} USDT to ${recipient.customerId} (fee ${fee} USDT)`,
     });
+    cashOutTxDone = true;
+
+    await txManager.createTransaction({
+      userId: String(recipient._id),
+      customerId: recipient.customerId,
+      transactionType: "cashIn",
+      amount: numAmount,
+      purpose: "Receive Money",
+      description: `Received ${numAmount} USDT from ${sender.customerId}`,
+    });
+    cashInTxDone = true;
+
+    /* ────────── company stats ────────── */
+    await SystemStats.updateOne(
+      { _id: company._id },
+      {
+        $inc: {
+          totalUserToUserTransfer: numAmount,
+          todayUserToUserTransfer: numAmount,
+          "income.sendCharge": fee,
+        },
+      }
+    );
+    companyDone = true;
+
+    /* ────────── notify recipient ────────── */
+    notifyCreated = await Notification.create({
+      user_id: recipient._id,
+      role: recipient.role,
+      title: "USDT Deposit Successful",
+      category: "deposit",
+      message: `You have successfully received ${numAmount} USDT from ${sender.customerId}.`,
+      url: `/transactions`,
+    });
+
+    if (global?.io?.to) {
+      global.io.to(String(recipient._id)).emit("user-notification", {
+        success: true,
+        message: "Deposit confirmed ✅",
+        notification: notifyCreated,
+      });
+    }
+  } catch (err) {
+    // ────────── BEST-EFFORT ROLLBACK (since no session) ──────────
+    // Always return sender debit first.
+    await User.updateOne(
+      { _id: sender._id },
+      { $inc: { m_balance: +grossAmount } }
+    );
+
+    // If recipient was credited, reverse it.
+    if (recipientCredited) {
+      await User.updateOne(
+        { _id: recipient._id },
+        { $inc: { m_balance: -numAmount } }
+      );
+    }
+
+    // If wallet and stats were inc'ed, best-effort revert.
+    if (senderWalletDone) {
+      await Wallet.updateOne(
+        { _id: senderWallet._id },
+        { $inc: { totalSend: -numAmount } }
+      );
+    }
+    if (recipientWalletDone) {
+      await Wallet.updateOne(
+        { _id: recipientWallet._id },
+        { $inc: { totalReceive: -numAmount } }
+      );
+    }
+    if (companyDone) {
+      await SystemStats.updateOne(
+        { _id: company._id },
+        {
+          $inc: {
+            totalUserToUserTransfer: -numAmount,
+            todayUserToUserTransfer: -numAmount,
+            "income.sendCharge": -fee,
+          },
+        }
+      );
+    }
+
+    // Transactions/notification best-effort: you may keep as-is or add delete logic on your models if needed.
+
+    return next(new ApiError(500, "Transfer failed, rolled back"));
   }
 
-  company.totalUserToUserTransfer += numAmount;
-  company.todayUserToUserTransfer += numAmount;
-  company.income.sendCharge += fee;
-  await company.save();
-
+  /* ────────── success ────────── */
   res.status(200).json({
     success: true,
     message: "Money sent successfully",

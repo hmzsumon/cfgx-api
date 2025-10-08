@@ -215,7 +215,7 @@ export const verifyEmail: typeHandler = catchAsync(async (req, res, next) => {
   });
 });
 
-// 🔐 Verify otp
+/* ────────── Verify otp ────────── */
 export const verifyOtpForPassword: typeHandler = catchAsync(
   async (req, res, next) => {
     const { otp, email } = req.body;
@@ -270,7 +270,8 @@ export const checkEmailExist: typeHandler = catchAsync(
   }
 );
 
-// resend verification email
+//
+/* ────────── resend verification email ────────── */
 export const resendVerificationEmail: typeHandler = catchAsync(
   async (req, res, next) => {
     const { email } = req.body;

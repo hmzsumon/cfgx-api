@@ -8,6 +8,7 @@ import {
   getActiveAiPositionsForUser,
   getAllAiAccounts,
   getAllAiAccountsForAdmin,
+  getClosedAiPositionsForUser,
   myAiAccounts,
   placeAiMarketOrder,
 } from "@/controllers/aiAccount.controller";
@@ -39,6 +40,12 @@ router.get(
   "/get-active-ai-positions-for-user",
   isAuthenticatedUser,
   getActiveAiPositionsForUser
+);
+
+router.get(
+  "/get-closed-ai-positions-for-user",
+  isAuthenticatedUser,
+  getClosedAiPositionsForUser
 );
 
 export default router;
