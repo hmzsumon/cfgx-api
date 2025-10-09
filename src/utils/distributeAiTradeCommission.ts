@@ -7,7 +7,7 @@ import { Types } from "mongoose";
 
 const transactionManager = new TransactionManager();
 
-const distributeGenerationBonus = async (
+const distributeAiTradeCommission = async (
   userId: string | Types.ObjectId,
   amount: number
 ): Promise<void> => {
@@ -107,4 +107,4 @@ const distributeGenerationBonus = async (
   }
 };
 
-export default distributeGenerationBonus;
+export default distributeAiTradeCommission;

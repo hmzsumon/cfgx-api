@@ -74,20 +74,29 @@ export const createAiAccount: typeHandler = catchAsync(async (req, res) => {
     createdAccountId = account._id?.toString?.() ?? null;
     createdAccountNumber = accountNumber;
 
-    // ── Set is_active_aiTrade = true if currently false ───────────────
-    // This is done *after* account creation; if this fails we compensate below.
+    /* ────────── set is_active_aiTrade=true; if is_new===true → set to false ────────── */
+    /* ────────── step 1: ensure aiTrade active ────────── */
     await User.updateOne(
-      { _id: userId, is_active_aiTrade: false },
+      { _id: userId, is_active_aiTrade: { $ne: true } },
       { $set: { is_active_aiTrade: true } }
     );
 
+    /* ────────── step 2: flip is_new → false only if currently true ────────── */
+    await User.updateOne(
+      { _id: userId, is_new: true },
+      { $set: { is_new: false } }
+    );
+
     await updateTeamAiTradeInfo(userId as string, debit);
-    await applySponsorBonus({
-      userName: user.name,
-      sponsorId: user.sponsorId as any,
-      amount,
-      plan,
-    });
+
+    if (user.is_new) {
+      await applySponsorBonus({
+        userName: user.name,
+        sponsorId: user.sponsorId as any,
+        amount,
+        plan,
+      });
+    }
     // non-blocking
     // void updateTeamAiTradeInfo(userId, debit);
 

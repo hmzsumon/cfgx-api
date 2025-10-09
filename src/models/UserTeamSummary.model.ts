@@ -7,8 +7,10 @@ export interface ITeamLevel {
   deposit: number;
   activeDeposit: number; // user current balance
   withdraw: number;
-  commission: number;
-  todayCommission?: number; // optional field for today's commission
+
+  aiTradeCommission: number;
+  todayAiTradeCommission?: number; // optional field for today's commission
+
   yesterdayCommission?: number; // optional field for yesterday's commission
   lastMonthSales: number;
   thisMonthSales: number;
@@ -54,6 +56,9 @@ export interface IUserTeamSummary extends Document {
   teamTotalAiTradeBalance: number;
   teamTotalLiveTradeBalance: number;
 
+  teamTotalAiTradeCommission: number;
+  teamTotalLiveTradeCommission: number;
+
   monthlySalesUpdated?: Date;
   [key: string]: any;
 }
@@ -70,8 +75,10 @@ const teamLevelSchema = new Schema<ITeamLevel>(
     deposit: { type: Number, default: 0 },
     activeDeposit: { type: Number, default: 0 }, // user current balance
     withdraw: { type: Number, default: 0 },
-    commission: { type: Number, default: 0 },
-    todayCommission: { type: Number, default: 0 },
+
+    aiTradeCommission: { type: Number, default: 0 },
+    todayAiTradeCommission: { type: Number, default: 0 },
+
     yesterdayCommission: { type: Number, default: 0 },
     lastMonthSales: { type: Number, default: 0 },
     thisMonthSales: { type: Number, default: 0 },
@@ -123,6 +130,8 @@ const userTeamSummarySchema = new Schema<IUserTeamSummary>(
 
     teamTotalAiTradeBalance: { type: Number, default: 0 },
     teamTotalLiveTradeBalance: { type: Number, default: 0 },
+
+    teamTotalAiTradeCommission: { type: Number, default: 0 },
 
     monthlySalesUpdated: { type: Date },
   },

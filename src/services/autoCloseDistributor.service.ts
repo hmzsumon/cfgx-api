@@ -7,6 +7,10 @@ import { User } from "@/models/user.model";
 import TransactionManager from "@/utils/TransactionManager";
 import mongoose from "mongoose";
 
+/* ✅ NEW */
+import UserTeamSummary from "@/models/UserTeamSummary.model";
+import UserWallet from "@/models/UserWallet.model";
+
 /* ── constants ───────────────────────────────────────────── */
 const PCT_USER = 0.6; // 60% to end user (per account)
 const PCT_COMPANY = 0.1; // 10% to company income.aiTradeCharge (per account)
@@ -103,14 +107,33 @@ export async function distributeOnAutoCloseSimple(posId: string) {
   /* ── build quick maps ──────────────────────────────────── */
   const parentsMap = new Map<string, mongoose.Types.ObjectId[]>();
   const custIdMap = new Map<string, string>();
+  // collect all parent ids to maybe use later (team/wallet)
+  const allParentIds = new Set<string>();
+
   for (const u of users) {
-    parentsMap.set(String(u._id), (u.parents || []) as any);
+    const plist = (u.parents || []) as any[];
+    parentsMap.set(String(u._id), plist as mongoose.Types.ObjectId[]);
     custIdMap.set(String(u._id), u.customerId || "");
+    plist.forEach((p) => allParentIds.add(String(p)));
   }
 
-  /* ── aggregate balance increments ──────────────────────── */
+  /* ── aggregate balance increments ─────────────────────── */
   const selfIncs = new Map<string, number>();
   const parentIncs = new Map<string, number>();
+
+  /* ✅ NEW: wallet increments (user & parents) */
+  const selfWalletInc = new Map<
+    string,
+    { totalAiTradeProfit: number; totalEarning: number }
+  >();
+  const parentWalletInc = new Map<
+    string,
+    { totalAiTradeCommission: number; totalEarning: number }
+  >();
+
+  /* ✅ NEW: team summary per parent $inc paths */
+  type IncMap = Record<string, number>;
+  const teamIncByParent = new Map<string, IncMap>();
 
   /* ── collect transactions to create (user + parents) ───── */
   const txManager = new TransactionManager();
@@ -122,6 +145,15 @@ export async function distributeOnAutoCloseSimple(posId: string) {
 
     /* ── self 60% ────────────────────────────────────────── */
     selfIncs.set(uid, round2((selfIncs.get(uid) || 0) + perUserAmt));
+
+    /* ✅ wallet: user totalAiTradeProfit + totalEarning */
+    const selfW = selfWalletInc.get(uid) || {
+      totalAiTradeProfit: 0,
+      totalEarning: 0,
+    };
+    selfW.totalAiTradeProfit = round2(selfW.totalAiTradeProfit + perUserAmt);
+    selfW.totalEarning = round2(selfW.totalEarning + perUserAmt);
+    selfWalletInc.set(uid, selfW);
 
     /* ── user transaction: Ai Trade Profit ───────────────── */
     txPromises.push(
@@ -140,7 +172,7 @@ export async function distributeOnAutoCloseSimple(posId: string) {
     if (parents.length > 0) {
       const max = Math.min(5, parents.length);
 
-      // If fewer than 5 parents, normalize the partial weights to 100%
+      // If fewer than 5 parents, normalize weights to 100%
       const pctSum =
         PARENTS_SPLIT.slice(0, max).reduce((a, b) => a + b, 0) || 1;
 
@@ -151,12 +183,35 @@ export async function distributeOnAutoCloseSimple(posId: string) {
 
         parentIncs.set(pid, round2((parentIncs.get(pid) || 0) + amt));
 
-        // parent transaction: Ai Trade Commission
+        /* ✅ wallet: parent totalAiTradeCommission + totalEarning */
+        const pw = parentWalletInc.get(pid) || {
+          totalAiTradeCommission: 0,
+          totalEarning: 0,
+        };
+        pw.totalAiTradeCommission = round2(pw.totalAiTradeCommission + amt);
+        pw.totalEarning = round2(pw.totalEarning + amt);
+        parentWalletInc.set(pid, pw);
+
+        /* ✅ team summary: level_{i+1} + root teamTotalAiTradeCommission */
+        const incs = teamIncByParent.get(pid) || {};
+        const levelKey = `level_${i + 1}`;
+        incs[`${levelKey}.aiTradeCommission`] = round2(
+          (incs[`${levelKey}.aiTradeCommission`] || 0) + amt
+        );
+        incs[`${levelKey}.todayAiTradeCommission`] = round2(
+          (incs[`${levelKey}.todayAiTradeCommission`] || 0) + amt
+        );
+        incs[`teamTotalAiTradeCommission`] = round2(
+          (incs[`teamTotalAiTradeCommission`] || 0) + amt
+        );
+        teamIncByParent.set(pid, incs);
+
+        // parent transaction
         const label = LEVEL_LABELS[i] ?? `L${i + 1}`;
         txPromises.push(
           txManager.createTransaction({
             userId: pid,
-            customerId: "", // optionally fetch and pass parent's own customerId
+            customerId: "", // optional: fill with parent's customerId if you fetch it
             transactionType: "cashIn",
             amount: amt,
             purpose: "Ai Trade Commission",
@@ -183,6 +238,58 @@ export async function distributeOnAutoCloseSimple(posId: string) {
     await User.bulkWrite(ops);
   }
 
+  /* ✅ NEW: apply wallet increments (user + parents) */
+  {
+    const ops: any[] = [];
+
+    // users (profit)
+    for (const [uid, w] of selfWalletInc.entries()) {
+      ops.push({
+        updateOne: {
+          filter: { userId: uid },
+          update: {
+            $inc: {
+              totalAiTradeProfit: w.totalAiTradeProfit,
+              totalEarning: w.totalEarning,
+            },
+          },
+        },
+      });
+    }
+
+    // parents (commission)
+    for (const [pid, w] of parentWalletInc.entries()) {
+      ops.push({
+        updateOne: {
+          filter: { userId: pid },
+          update: {
+            $inc: {
+              totalAiTradeCommission: w.totalAiTradeCommission,
+              totalEarning: w.totalEarning,
+            },
+          },
+        },
+      });
+    }
+
+    if (ops.length) {
+      await UserWallet.bulkWrite(ops, { ordered: false });
+    }
+  }
+
+  /* ✅ NEW: apply team summary increments per parent */
+  if (teamIncByParent.size > 0) {
+    const ops = Array.from(teamIncByParent.entries()).map(([pid, incs]) => ({
+      updateOne: {
+        filter: { userId: pid },
+        update: { $inc: incs },
+        upsert: true, // ডক না থাকলে তৈরি হবে
+        // setOnInsert: { userId: pid }  // চাইলে যোগ করতে পারো
+      },
+    }));
+    await UserTeamSummary.bulkWrite(ops, { ordered: false });
+  }
+
   /* ── apply company income (10% per account, once) ──────── */
   const companyTotal = round2(perCompanyAmt * accounts.length);
   await SystemStats.updateOne(
@@ -206,5 +313,8 @@ export async function distributeOnAutoCloseSimple(posId: string) {
     usersAffected: selfIncs.size,
     parentsAffected: parentIncs.size,
     txCount: txPromises.length,
+    walletUsers: selfWalletInc.size,
+    walletParents: parentWalletInc.size,
+    teamParents: teamIncByParent.size,
   };
 }

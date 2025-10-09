@@ -177,6 +177,9 @@ const userSchema = new Schema<IUser>(
     is_withdraw_block: { type: Boolean, default: false },
     is_complete_bet_volume: { type: Boolean, default: false }, // Optional field for bet volume completion status
     is_bind_wallet: { type: Boolean, default: false },
+
+    is_active_aiTrade: { type: Boolean, default: false },
+
     fcm_tokens: [],
     sponsorId: {
       type: Schema.Types.ObjectId,
