@@ -290,6 +290,24 @@ export async function distributeOnAutoCloseSimple(posId: string) {
     await UserTeamSummary.bulkWrite(ops, { ordered: false });
   }
 
+  /* ✅ NEW: aggregate totals for SystemStats */
+  const usersTotalProfit = round2(perUserAmt * accounts.length); // ইউজারদের 60% মোট
+  const parentsTotalCommission = round2(perParentsPool * accounts.length); // পেরেন্টদের 30% মোট
+
+  /* ✅ NEW: SystemStats -> today/total profit & today commission */
+  await SystemStats.updateOne(
+    {},
+    {
+      $inc: {
+        todayAiTradeProfit: usersTotalProfit,
+        totalAiTradeProfit: usersTotalProfit,
+        todayAiTradeCommission: parentsTotalCommission,
+        totalAiTradeCommission: parentsTotalCommission,
+      },
+    },
+    { upsert: true }
+  ).exec();
+
   /* ── apply company income (10% per account, once) ──────── */
   const companyTotal = round2(perCompanyAmt * accounts.length);
   await SystemStats.updateOne(
@@ -316,5 +334,7 @@ export async function distributeOnAutoCloseSimple(posId: string) {
     walletUsers: selfWalletInc.size,
     walletParents: parentWalletInc.size,
     teamParents: teamIncByParent.size,
+    usersTotalProfit,
+    parentsTotalCommission,
   };
 }

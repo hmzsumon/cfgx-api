@@ -6,6 +6,7 @@ import { User } from "@/models/user.model";
 import UserWallet from "@/models/UserWallet.model";
 import UserWithdrawSummary from "@/models/UserWithdrawSummary.model";
 import Withdraw from "@/models/Withdraw.model";
+import { sendEmail } from "@/services/email/emailService";
 import { withdrawApprovalTemplate } from "@/services/email/templates/withdrawtemplate";
 import { typeHandler } from "@/types/express";
 import { ApiError } from "@/utils/ApiError";
@@ -14,21 +15,16 @@ import TransactionManager from "@/utils/TransactionManager";
 import updateTeamInactiveUsers from "@/utils/updateTeamInactiveUsers";
 import updateTeamWithdraw from "@/utils/updateTeamWithdraw";
 
+const WITHDRAW_CHARGE = 0.05; // 5%
+
 /* ── Create New Withdraw Request ───────────────────────────────── */
 export const newWithdrawRequest: typeHandler = catchAsync(
   async (req, res, next) => {
     const userId = req.user?._id;
 
-    const { amount, withdrawAddress, network, withdrawFee, receiptAmount } =
-      req.body;
+    const { amount, withdrawAddress, network } = req.body;
 
-    if (
-      !amount ||
-      !withdrawAddress ||
-      !network ||
-      !withdrawFee ||
-      !receiptAmount
-    ) {
+    if (!amount || !withdrawAddress || !network) {
       return next(new ApiError(400, "All fields are required"));
     }
 
@@ -45,6 +41,10 @@ export const newWithdrawRequest: typeHandler = catchAsync(
     if (!admin) {
       return next(new ApiError(404, "Admin user not found"));
     }
+
+    const fee = Number(amount) * WITHDRAW_CHARGE;
+    const withdrawFee = Number(fee.toFixed(2));
+    const netAmount = Number(amount) - withdrawFee;
 
     /* ────────── get agent status by user agentId ────────── */
     let agentStatus = await AgentStatus.findOne({
@@ -95,7 +95,7 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       email: user.email,
       customerId: user.customerId,
       amount: numAmount,
-      netAmount: amount,
+      netAmount: netAmount,
       netWork: network,
       netWorkAddress: withdrawAddress,
       charge: withdrawFee,
@@ -188,7 +188,7 @@ export const getAllWithdraws: typeHandler = catchAsync(
 export const getAllWithdrawsForAdmin: typeHandler = catchAsync(
   async (req, res, next) => {
     // find all withdraws
-    const withdraws = await Withdraw.find({});
+    const withdraws = await Withdraw.find({}).sort({ createdAt: -1 });
 
     if (!withdraws || withdraws.length === 0) {
       return next(new ApiError(404, "No withdraws found"));
@@ -240,7 +240,7 @@ export const getWithdrawById: typeHandler = catchAsync(
   }
 );
 
-// approve withdraw request
+/* ────────── approve withdraw request ────────── */
 export const approveWithdrawRequest: typeHandler = catchAsync(
   async (req, res, next) => {
     const userId = req.user?._id;
@@ -296,6 +296,14 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
       return next(new ApiError(404, "Company not found"));
     }
 
+    /* ────────── Get Agent Status By User AgentId ────────── */
+    const agentStatus = await AgentStatus.findOne({
+      agentId: user.agentId,
+    });
+    if (!agentStatus) {
+      return next(new ApiError(404, "Agent status not found"));
+    }
+
     // update withdraw status to approved
     withdraw.status = "approved";
     withdraw.isApproved = true;
@@ -338,6 +346,11 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
     // update user team withdraw
     await updateTeamWithdraw(withdraw.userId, withdraw.amount);
 
+    // update agent status
+    agentStatus.totalWithdrawals += withdraw.amount;
+    agentStatus.toDayWithdrawals += withdraw.amount;
+    await agentStatus.save();
+
     // send notification to user
     const userNotification = await Notification.create({
       user_id: user._id,
@@ -356,7 +369,7 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
       });
     }
 
-    // send email to user
+    /* ────────── send email to user ────────── */
     const html = withdrawApprovalTemplate({
       name: user.name,
       amount: withdraw.amount,
@@ -364,11 +377,11 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
       walletAddress: withdraw.netWorkAddress,
     });
 
-    // await sendEmail({
-    //   email: user.email,
-    //   subject: "Withdraw Request Approved",
-    //   html: html,
-    // });
+    await sendEmail({
+      email: user.email,
+      subject: "Withdraw Request Approved",
+      html: html,
+    });
 
     console.log(
       `Withdraw request approved for user: ${user.name}, Amount: ${withdraw.amount}`

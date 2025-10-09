@@ -111,6 +111,15 @@ export interface ISystemStats extends Document {
 
   totalLiveTradeBalance: number;
   todayLiveTradeBalance: number;
+
+  totalAiTradeCommission: number;
+  todayAiTradeCommission: number;
+
+  totalAiTradeProfit: number;
+  todayAiTradeProfit: number;
+
+  totalLiveTradeCommission: number;
+  todayLiveTradeCommission: number;
 }
 
 const systemStatsSchema = new Schema<ISystemStats>(
@@ -220,6 +229,15 @@ const systemStatsSchema = new Schema<ISystemStats>(
 
     todayAiTradeBalance: { type: Number, default: 0 },
     todayLiveTradeBalance: { type: Number, default: 0 },
+
+    totalAiTradeCommission: { type: Number, default: 0 },
+    totalLiveTradeCommission: { type: Number, default: 0 },
+
+    todayAiTradeCommission: { type: Number, default: 0 },
+    todayLiveTradeCommission: { type: Number, default: 0 },
+
+    totalAiTradeProfit: { type: Number, default: 0 },
+    todayAiTradeProfit: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

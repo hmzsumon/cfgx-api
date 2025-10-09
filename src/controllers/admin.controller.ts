@@ -227,6 +227,18 @@ export const getAdminDashboardSummary: typeHandler = catchAsync(
       todayNewUsers: company.users.todayNew || 0,
       totalActiveUsers: company.users.activeTotal || 0,
       todayActiveUsers: company.users.activeToday || 0,
+
+      totalLiveTradeBalance: company.totalLiveTradeBalance || 0,
+      todayLiveTradeBalance: company.todayLiveTradeBalance || 0,
+
+      todayAiTradeBalance: company.todayAiTradeBalance || 0,
+      totalAiTradeBalance: company.totalAiTradeBalance || 0,
+
+      totalAiTradeCommission: company.totalAiTradeCommission || 0,
+      todayAiTradeCommission: company.todayAiTradeCommission || 0,
+
+      totalAiTradeProfit: company.totalAiTradeProfit || 0,
+      todayAiTradeProfit: company.todayAiTradeProfit || 0,
     };
 
     res.status(200).json({

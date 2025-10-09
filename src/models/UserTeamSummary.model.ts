@@ -132,6 +132,7 @@ const userTeamSummarySchema = new Schema<IUserTeamSummary>(
     teamTotalLiveTradeBalance: { type: Number, default: 0 },
 
     teamTotalAiTradeCommission: { type: Number, default: 0 },
+    teamTotalLiveTradeCommission: { type: Number, default: 0 },
 
     monthlySalesUpdated: { type: Date },
   },
