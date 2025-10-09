@@ -43,6 +43,8 @@ export type TransactionPurpose =
   | "game:refund"
   | "game:bonus"
   | "game:admin_adjustment"
+  | "Transfer to Trade"
+  | "Transfer to Wallet"
   | "game:payout";
 
 export interface ITransaction extends Document {
@@ -130,6 +132,8 @@ const transactionSchema = new Schema<ITransaction>(
         "Ai Trade Profit",
         "Ai Trade Commission",
         "Create Ai Account",
+        "Transfer to Trade",
+        "Transfer to Wallet",
       ],
       required: true,
     },

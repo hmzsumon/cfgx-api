@@ -113,7 +113,7 @@ export const sendMoney: typeHandler = catchAsync(async (req, res, next) => {
       description: `Sent ${numAmount} USDT to ${recipient.customerId} (fee ${fee} USDT)`,
     });
     cashOutTxDone = true;
-
+    /* ────────── cash in transactions ────────── */
     await txManager.createTransaction({
       userId: String(recipient._id),
       customerId: recipient.customerId,

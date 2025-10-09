@@ -11,6 +11,10 @@ import { ApiError } from "@/utils/ApiError";
 import { catchAsync } from "@/utils/catchAsync";
 import updateTeamLiveTradeInfo from "@/utils/updateTeamLiveTradeInfo";
 
+/* ✅ NEW: transactions + wallet tallies */
+import UserWallet from "@/models/UserWallet.model";
+import TransactionManager from "@/utils/TransactionManager";
+
 /* ────────── helpers ────────── */
 const round2 = (n: number) => +Number(n).toFixed(2);
 
@@ -51,6 +55,7 @@ export const listMyAccountsLite = catchAsync(async (req, res) => {
  *  - ONLY call updateTeamLiveTradeInfo when main is involved
  *    - fromId === 'main' → +amount
  *    - toId   === 'main' → -amount
+ *  - When main is involved, create transactions + wallet tallies
 ──────────────────────────────────────────────────────────── */
 export const createInternalTransfer = catchAsync(async (req, res) => {
   /* ────────── auth & input ────────── */
@@ -144,6 +149,62 @@ export const createInternalTransfer = catchAsync(async (req, res) => {
       "❌ Team live trade update failed:",
       (e as any)?.message || e
     );
+  }
+
+  /* ────────── transactions + wallet tallies (main only) ────────── */
+  try {
+    const txManager = new TransactionManager();
+
+    // main → account : cashOut + wallet.totalTransferToTrade++
+    if (fromId === "main" && toId !== "main") {
+      const desc =
+        toAcc?.accountNumber != null
+          ? `Transfer to Trade #${toAcc.accountNumber}`
+          : `Transfer to Trade (Account ${String(toId)})`;
+
+      await txManager.createTransaction({
+        userId: String(user._id),
+        customerId: user.customerId,
+        transactionType: "cashOut",
+        amount: round2(amt),
+        purpose: "Transfer to Trade",
+        description: desc,
+      });
+
+      await UserWallet.updateOne(
+        { userId: user._id },
+        { $inc: { totalTransferToTrade: round2(amt) } },
+        { upsert: true }
+      ).exec();
+    }
+
+    // account → main : cashIn + wallet.totalTransferToWallet++
+    if (fromId !== "main" && toId === "main") {
+      const desc =
+        fromAcc?.accountNumber != null
+          ? `Transfer to Wallet from #${fromAcc.accountNumber}`
+          : `Transfer to Wallet (From Account ${String(fromId)})`;
+
+      await txManager.createTransaction({
+        userId: String(user._id),
+        customerId: user.customerId,
+        transactionType: "cashIn",
+        amount: round2(amt),
+        purpose: "Transfer to Wallet",
+        description: desc,
+      });
+
+      await UserWallet.updateOne(
+        { userId: user._id },
+        { $inc: { totalTransferToWallet: round2(amt) } },
+        { upsert: true }
+      ).exec();
+    }
+
+    // account ↔ account : no transactions / wallet tallies
+  } catch (e) {
+    // Not fatal for the transfer itself; log for ops
+    console.error("❌ Transfer side-effects failed:", (e as any)?.message || e);
   }
 
   /* ────────── create transfer record ────────── */

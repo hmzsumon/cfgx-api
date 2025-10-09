@@ -498,7 +498,7 @@ export const getClosedAiPositionsForUser: typeHandler = catchAsync(
     const positions = await AiPosition.find({
       status: "closed",
       userId,
-    });
+    }).sort({ closedAt: -1 });
     res.status(200).json({ success: true, items: positions });
   }
 );

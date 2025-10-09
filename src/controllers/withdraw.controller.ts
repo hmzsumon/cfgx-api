@@ -159,30 +159,28 @@ export const newWithdrawRequest: typeHandler = catchAsync(
   }
 );
 
-//get all withdraws
-export const getAllWithdraws: typeHandler = catchAsync(
-  async (req, res, next) => {
-    const userId = req.user?._id;
+/* ────────── get my withdraws ────────── */
+export const geMyWithdraws: typeHandler = catchAsync(async (req, res, next) => {
+  const userId = req.user?._id;
 
-    if (!userId) {
-      return next(new ApiError(401, "User not authenticated"));
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return next(new ApiError(404, "User not found"));
-    }
-
-    const withdraws = await Withdraw.find({ userId: userId })
-      .sort({ createdAt: -1 })
-      .populate("userId", "name email phone");
-
-    res.status(200).json({
-      success: true,
-      data: withdraws,
-    });
+  if (!userId) {
+    return next(new ApiError(401, "User not authenticated"));
   }
-);
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return next(new ApiError(404, "User not found"));
+  }
+
+  const withdraws = await Withdraw.find({ userId: userId })
+    .sort({ createdAt: -1 })
+    .populate("userId", "name email phone");
+
+  res.status(200).json({
+    success: true,
+    withdraws,
+  });
+});
 
 // get all withdraws for admin
 export const getAllWithdrawsForAdmin: typeHandler = catchAsync(
