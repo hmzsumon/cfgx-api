@@ -398,16 +398,22 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
   const notional = entryPrice * spec.contractSize * lots;
   const commissionOpen = spec.commissionPerLot * lots;
 
-  /* ────────── manipulateClosePrice = entryPrice - takeProfit (rounded to tick) ──────────
-     নোট: এখানে আপনার চাহিদামাফিক সরাসরি subtract করা হয়েছে।
-     যদি takeProfit "target price" হয় (ডেল্টা নয়), তাহলে আপনার লজিক আলাদা হতে পারে।
-  */
+  /* ────────── manipulateClosePrice by side (tick-rounded) ──────────
+   Rule:
+   - BUY  => entryPrice + takeProfit
+   - SELL => entryPrice - takeProfit
+   Assumes takeProfit is a positive delta (not an absolute price).
+*/
   let manipulateClosePrice: number | undefined = undefined;
   if (Number.isFinite(takeProfit) && (takeProfit as number) > 0) {
-    const raw = entryPrice - (takeProfit as number);
+    const tpDelta = takeProfit as number;
+    const raw = side === "buy" ? entryPrice + tpDelta : entryPrice - tpDelta;
+
     const rounded = roundToTick(raw, tick);
     manipulateClosePrice =
-      Number.isFinite(rounded) && rounded > 0 ? rounded : undefined;
+      Number.isFinite(rounded) && rounded > 0
+        ? +rounded.toFixed(spec.digits)
+        : undefined;
   }
 
   const pos = await AiPosition.create({
