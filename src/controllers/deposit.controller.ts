@@ -13,6 +13,8 @@ import { ApiError } from "@/utils/ApiError";
 import { catchAsync } from "@/utils/catchAsync";
 import TransactionManager from "@/utils/TransactionManager";
 import updateTeamSales from "@/utils/updateTeamSales";
+import crypto from "crypto";
+import mongoose, { Types } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 
 // Extend NodeJS global type to include 'io'
@@ -329,11 +331,7 @@ export const testSocketConnection: typeHandler = catchAsync(
 // get all deposits for admin
 export const getAllDepositsForAdmin: typeHandler = catchAsync(
   async (req, res, next) => {
-    const deposits = await Deposit.find({
-      isApproved: true,
-    })
-      .sort({ createdAt: -1 })
-      .select("-qrCode ");
+    const deposits = await Deposit.find().sort({ createdAt: -1 });
 
     if (!deposits || deposits.length === 0) {
       return next(new ApiError(404, "No deposits found"));
@@ -369,3 +367,276 @@ export const getDepositByIdForAdmin: typeHandler = catchAsync(
     });
   }
 );
+
+/* ────────── GET /api/v1/deposits ────────── */
+export const getAllDeposits: typeHandler = catchAsync(
+  async (req, res, next) => {
+    try {
+      const {
+        status,
+        page = "1",
+        limit = "50",
+      } = req.query as {
+        status?: string;
+        page?: string;
+        limit?: string;
+      };
+
+      const query: any = {};
+      if (status && ["pending", "approved", "rejected"].includes(status)) {
+        query.status = status;
+      }
+
+      const pageNum = Math.max(parseInt(page as string, 10) || 1, 1);
+      const limitNum = Math.min(
+        Math.max(parseInt(limit as string, 10) || 50, 1),
+        200
+      );
+      const skip = (pageNum - 1) * limitNum;
+
+      const [deposits, total] = await Promise.all([
+        Deposit.find(query).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
+        Deposit.countDocuments(query),
+      ]);
+
+      res.json({ deposits, total, page: pageNum, limit: limitNum });
+    } catch (err: any) {
+      res
+        .status(500)
+        .json({ message: err.message || "Failed to fetch deposits" });
+    }
+  }
+);
+
+/* ────────── GET /api/v1/deposits/:id ────────── */
+export const getSingleDeposit: typeHandler = catchAsync(
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      // /* ────────── Guard: validate id ────────── */
+      if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ message: "Invalid deposit id" });
+      }
+
+      const deposit = await Deposit.findById(id);
+      if (!deposit)
+        return res.status(404).json({ message: "Deposit not found" });
+
+      res.json({ deposit });
+    } catch (err: any) {
+      res
+        .status(500)
+        .json({ message: err.message || "Failed to fetch deposit" });
+    }
+  }
+);
+
+/* ────────── helpers ────────── */
+const uuid = () => crypto.randomBytes(16).toString("hex");
+const todayKey = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+/* ────────── GET /api/v1/admin/deposits/preview ────────── */
+/* query: customerId, amount */
+export const adminPreviewManualDeposit = catchAsync(async (req, res, next) => {
+  const customerId = String(req.query.customerId || "").trim();
+  const amount = Number(req.query.amount);
+
+  if (!customerId || !Number.isFinite(amount) || amount <= 0) {
+    return next(new ApiError(400, "customerId এবং amount সঠিকভাবে দিন"));
+  }
+
+  const user = await User.findOne({ customerId });
+  if (!user) return next(new ApiError(404, "User not found"));
+
+  const wallet = await UserWallet.findOne({ userId: user._id });
+  if (!wallet) return next(new ApiError(404, "Wallet not found"));
+
+  /* ────────── preview data ────────── */
+  const current = {
+    m_balance: user.m_balance ?? 0,
+    d_balance: user.d_balance ?? 0,
+    totalDeposit: wallet.totalDeposit ?? 0,
+  };
+  const nextVals = {
+    m_balance: current.m_balance + amount,
+    d_balance: current.d_balance + amount,
+    totalDeposit: current.totalDeposit + amount,
+  };
+
+  res.json({
+    ok: true,
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      customerId: user.customerId,
+      phone: user.phone,
+      is_active: user.is_active,
+    },
+    amount,
+    current,
+    next: nextVals,
+  });
+});
+
+/* ────────── POST /api/v1/admin/deposits/manual ────────── */
+/* body: { customerId: string; amount: number; note?: string } */
+export const adminCreateManualDeposit = catchAsync(async (req, res, next) => {
+  const { customerId, amount, note } = req.body as {
+    customerId: string;
+    amount: number;
+    note?: string;
+  };
+
+  /* ────────── validate ────────── */
+  if (!customerId || !Number.isFinite(amount) || amount <= 0) {
+    return next(new ApiError(400, "customerId এবং amount সঠিকভাবে দিন"));
+  }
+
+  const user = await User.findOne({ customerId });
+  if (!user) return next(new ApiError(404, "User not found"));
+
+  const wallet = await UserWallet.findOne({ userId: user._id });
+  if (!wallet) return next(new ApiError(404, "Wallet not found"));
+
+  const company = await SystemStats.findOne();
+  if (!company) return next(new ApiError(404, "Company stats not found"));
+
+  const agent = await AgentStatus.findOne({ agentId: user.agentId });
+  if (!agent) return next(new ApiError(404, "Agent not found"));
+
+  /* ────────── create deposit doc (approved instantly) ────────── */
+  const orderId = uuid();
+  const now = new Date();
+
+  const deposit = await Deposit.create({
+    userId: user._id as Types.ObjectId,
+    orderId,
+    name: user.name,
+    phone: user.phone,
+    email: user.email,
+    customerId: user.customerId,
+    amount, // full amount
+    charge: 0, // manual => no fee
+    receivedAmount: amount, // received == amount
+    destinationAddress: undefined,
+    qrCode: undefined,
+    chain: "usdt",
+    status: "approved",
+    isApproved: true,
+    isExpired: false,
+    confirmations: 1,
+    isManual: true,
+    callbackUrl: "manual://no-callback",
+    note: note ?? "",
+    approvedAt: now,
+    callbackReceivedAt: now,
+    txId: `MANUAL-${Date.now()}`, // optional trace
+  });
+
+  /* ────────── update user balances ────────── */
+  const activeAmount = (user.m_balance ?? 0) + amount;
+  user.m_balance = activeAmount;
+  user.d_balance = (user.d_balance ?? 0) + amount;
+
+  if (activeAmount >= 30 && !user.is_active) {
+    user.is_active = true;
+    user.activeAt = now;
+    company.users.activeToday += 1;
+    company.users.activeTotal += 1;
+  }
+  await user.save();
+
+  /* ────────── wallet & team sales ────────── */
+  wallet.totalDeposit = (wallet.totalDeposit ?? 0) + amount;
+  await wallet.save();
+  updateTeamSales(user._id as string, amount);
+
+  /* ────────── company aggregates (no blockbee fields) ────────── */
+  company.deposits.total += amount;
+  company.deposits.today += amount;
+
+  // blockbeeReceivedTotal/Today/charge স্পর্শ করছি না, এগুলো শুধু ব্লকবির জন্য
+  await company.save();
+
+  /* ────────── agent stats ────────── */
+  agent.totalDeposits += amount;
+  agent.toDayDeposits += amount;
+  await agent.save();
+
+  /* ────────── notifications (user/admin) ────────── */
+  const admin = await User.findOne({ role: "admin" });
+  const notifyText = `You have successfully deposited ${amount} USDT.`;
+
+  const userNotification = await Notification.create({
+    user_id: user._id,
+    role: user.role,
+    title: "USDT Deposit Successful",
+    category: "deposit",
+    message: notifyText,
+    url: `/deposit-history`,
+  });
+
+  const adminNotification =
+    admin &&
+    (await AdminNotification.create({
+      user_id: admin._id,
+      role: admin.role,
+      title: "New Deposit",
+      category: "deposit",
+      message: `New deposit of ${amount} from ${user.name}`,
+      url: `/deposits/all-deposits`,
+    }));
+
+  /* ────────── transaction log ────────── */
+  const txManager = new TransactionManager();
+  await txManager.createTransaction({
+    userId: user._id as string,
+    customerId: user.customerId,
+    transactionType: "cashIn",
+    amount,
+    purpose: "Deposit",
+    description: notifyText,
+  });
+
+  /* ────────── socket emit ────────── */
+  if (global?.io?.to) {
+    global.io.to(String(user._id)).emit("deposit-update", {
+      success: true,
+      message: "Deposit confirmed ✅",
+      amount,
+      txId: deposit.txId,
+      depositId: deposit._id,
+    });
+
+    global.io.to(String(user._id)).emit("user-notification", {
+      success: true,
+      message: "Deposit confirmed ✅",
+      notification: userNotification,
+    });
+
+    if (adminNotification && admin?._id) {
+      global.io.emit("admin-notification", {
+        success: true,
+        message: "New Deposit",
+        notification: adminNotification,
+      });
+    }
+  }
+
+  /* ────────── email to user ────────── */
+  const html = depositTemplate(user.name, amount, orderId);
+  await sendEmail({
+    email: user.email,
+    subject: "Deposit Confirmation",
+    html,
+  });
+
+  /* ────────── response ────────── */
+  res.status(201).json({
+    ok: true,
+    message: "Manual deposit completed",
+    deposit,
+  });
+});

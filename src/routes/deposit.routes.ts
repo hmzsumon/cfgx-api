@@ -1,8 +1,12 @@
 import {
+  adminCreateManualDeposit,
+  adminPreviewManualDeposit,
   createDepositWithBlockBee,
+  getAllDeposits,
   getAllDepositsForAdmin,
   getDepositByIdForAdmin,
   getMyDeposits,
+  getSingleDeposit,
   handleBlockBeeCallback,
   testSocketConnection,
 } from "@/controllers/deposit.controller";
@@ -45,6 +49,35 @@ router.get(
   isAuthenticatedUser,
   authorizeRoles("admin"),
   getDepositByIdForAdmin
+);
+
+router.get(
+  "/deposits",
+  isAuthenticatedUser,
+  authorizeRoles("admin"),
+  getAllDeposits
+);
+router.get(
+  "/deposits/:id",
+  isAuthenticatedUser,
+  authorizeRoles("admin"),
+  getSingleDeposit
+);
+
+/* ────────── preview before confirm (GET) ────────── */
+router.get(
+  "/admin/deposits/preview",
+  isAuthenticatedUser,
+  authorizeRoles("admin"),
+  adminPreviewManualDeposit
+);
+
+/* ────────── confirm + create deposit (POST) ────────── */
+router.post(
+  "/admin/deposits/manual",
+  isAuthenticatedUser,
+  authorizeRoles("admin"),
+  adminCreateManualDeposit
 );
 
 export default router;

@@ -12,7 +12,6 @@ import { typeHandler } from "@/types/express";
 import { ApiError } from "@/utils/ApiError";
 import { catchAsync } from "@/utils/catchAsync";
 import TransactionManager from "@/utils/TransactionManager";
-import updateTeamInactiveUsers from "@/utils/updateTeamInactiveUsers";
 import updateTeamWithdraw from "@/utils/updateTeamWithdraw";
 
 const WITHDRAW_CHARGE = 0.05; // 5%
@@ -315,10 +314,10 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
     user.w_balance = Math.max(0, user.w_balance + withdraw.amount);
     user.d_balance = Math.max(0, user.d_balance - withdraw.amount);
     // check if user.m_balance is less than 30
-    if (user.m_balance < 30) {
-      user.is_active = false;
-      await updateTeamInactiveUsers(user._id as string, withdraw.amount);
-    }
+    // if (user.m_balance < 30) {
+    //   user.is_active = false;
+    //   await updateTeamInactiveUsers(user._id as string, withdraw.amount);
+    // }
     await user.save();
 
     // update user withdraw summary
@@ -341,7 +340,7 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
     company.withdrawals.netTotal += withdraw.netAmount;
     await company.save();
 
-    // update user team withdraw
+    /* ──────────Call update user team withdraw ────────── */
     await updateTeamWithdraw(withdraw.userId, withdraw.amount);
 
     // update agent status
