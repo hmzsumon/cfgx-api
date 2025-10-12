@@ -8,6 +8,7 @@ import {
   getActiveAiPositionsForUser,
   getAllAiAccounts,
   getAllAiAccountsForAdmin,
+  getAllAiAccountsForAllUsers,
   getClosedAiPositionsForUser,
   myAiAccounts,
   placeAiMarketOrder,
@@ -47,5 +48,7 @@ router.get(
   isAuthenticatedUser,
   getClosedAiPositionsForUser
 );
+
+router.get("/all-ai-accounts-for-all-users", getAllAiAccountsForAllUsers);
 
 export default router;

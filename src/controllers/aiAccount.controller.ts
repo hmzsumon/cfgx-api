@@ -588,3 +588,29 @@ export const closeAiPosition: typeHandler = catchAsync(async (req, res) => {
     },
   });
 });
+
+/* ── Get all active AI Account and is_active_aiTrade = true for all users ───────────────────────────────── */
+export const getAllAiAccountsForAllUsers: typeHandler = catchAsync(
+  async (req, res) => {
+    const items = await Account.find({ status: "active" }).sort({
+      isDefault: -1,
+      createdAt: 1,
+    });
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const user = await User.findById(item.userId);
+      if (user) {
+        if (!user.is_active_aiTrade) {
+          console.log(
+            `❌ User ${user.name} is not active aiTrade, skipping...`
+          );
+          user.is_active_aiTrade = true;
+          await user.save();
+        }
+      }
+    }
+
+    res.json({ success: true, totalItems: items.length });
+  }
+);

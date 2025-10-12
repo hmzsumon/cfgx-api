@@ -364,3 +364,34 @@ export const getPositionById = catchAsync(async (req, res) => {
 
   res.json({ success: true, item });
 });
+
+/* ── get open positions by accountId and userId ──────────────── */
+export const getOpenPositionsByAccountId = catchAsync(async (req, res) => {
+  const userId = req.user?._id;
+  const accountId = String(req.query.accountId || "").trim();
+  if (!userId)
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  if (!accountId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "accountId is required" });
+  }
+
+  const docs = await Position.find({ accountId, userId, status: "open" })
+    .sort({ createdAt: -1 })
+    .select("_id symbol side status lots entryPrice contractSize openedAt")
+    .lean();
+
+  const items = (docs ?? []).map((p: any) => ({
+    _id: String(p._id),
+    symbol: String(p.symbol),
+    side: p.side as "buy" | "sell",
+    status: p.status as "open" | "closed",
+    lots: Number(p.lots ?? 0),
+    entryPrice: Number(p.entryPrice ?? 0),
+    contractSize: Number(p.contractSize ?? 1),
+    openedAt: p.openedAt,
+  }));
+
+  res.json({ success: true, items });
+});

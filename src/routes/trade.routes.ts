@@ -6,6 +6,7 @@
 import {
   closePosition,
   getClosedPositions,
+  getOpenPositionsByAccountId,
   getPositionById,
   getPositions,
   placeMarketOrder,
@@ -28,5 +29,8 @@ router.get("/closed-positions", isAuthenticatedUser, getClosedPositions);
 
 /* ────────── Get Position by id ────────── */
 router.get("/positions/:id", isAuthenticatedUser, getPositionById);
+
+/* ────────── Get Open Positions by accountId ────────── */
+router.get("/open-positions", isAuthenticatedUser, getOpenPositionsByAccountId);
 
 export default router;
