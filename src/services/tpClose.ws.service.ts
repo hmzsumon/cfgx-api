@@ -127,7 +127,9 @@ async function tryCloseIfTpHitWithQuote(
       side: pos.side,
       closePrice,
       pnl,
+      takeProfit: pos.takeProfit,
       reason: "takeProfit_usd_ws",
+      closedBy: "ai",
     });
   }
 

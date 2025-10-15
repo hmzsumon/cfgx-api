@@ -573,6 +573,20 @@ export const closeAiPosition: typeHandler = catchAsync(async (req, res) => {
 
   const spec = getContractSpec(String(pos.symbol));
 
+  // Broadcast close event
+  if ((global as any).io) {
+    (global as any).io.emit("position:closed", {
+      _id: String(pos._id),
+      symbol: pos.symbol,
+      side: pos.side,
+      closePrice: pos.closePrice,
+      pnl: pos.pnl,
+      takeProfit: pos.takeProfit,
+      reason: "takeProfit_usd_ws",
+      closedBy: "admin",
+    });
+  }
+
   res.json({
     success: true,
     position: {
@@ -612,5 +626,18 @@ export const getAllAiAccountsForAllUsers: typeHandler = catchAsync(
     }
 
     res.json({ success: true, totalItems: items.length });
+  }
+);
+
+/* ── Get all active AiPositions by plan for users  ───────────────────────────── */
+export const getActiveAiPositionsByPlanForUser: typeHandler = catchAsync(
+  async (req, res) => {
+    const { plan } = req.query as { plan: string };
+    const positions = await AiPosition.find({
+      status: "open",
+      plan,
+    });
+
+    res.status(200).json({ success: true, items: positions });
   }
 );
