@@ -61,7 +61,7 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       return next(new ApiError(404, "User withdraw summary not found"));
     }
 
-    const userBalance = user.m_balance - 3;
+    const userBalance = user.m_balance;
 
     // check if user has sufficient balance
     if (userBalance < 0) {

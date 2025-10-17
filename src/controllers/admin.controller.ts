@@ -42,7 +42,7 @@ export const initialSetup = catchAsync(
       state: "State",
       zip: "12345",
       country: "Country",
-      about: "Welcome to h5FiveX, your ultimate gaming platform.",
+      about: "Welcome to CGFX, your ultimate gaming platform.",
     });
 
     // 🔹 2. Create Admin User

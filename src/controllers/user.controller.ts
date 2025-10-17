@@ -298,7 +298,7 @@ export const resendVerificationEmail: typeHandler = catchAsync(
     );
     await sendEmail({
       email: user.email,
-      subject: "Email Verification - h5FiveX",
+      subject: "Email Verification - CGFX",
       html: emailContent,
     });
     res.status(200).json({
