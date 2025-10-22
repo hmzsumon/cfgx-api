@@ -11,6 +11,7 @@ import adminRoutes from "@/routes/admin.routes";
 import agentRoutes from "@/routes/agent.routes";
 import depositRoutes from "@/routes/deposit.routes";
 import notificationRoutes from "@/routes/notification.routes";
+import pushRoutes from "@/routes/push.route";
 import rankRoutes from "@/routes/rank.routes";
 import userRoutes from "@/routes/user.routes";
 import wheelRoutes from "@/routes/wheel.routes";
@@ -67,6 +68,7 @@ app.use("/api/v1", tradeRoutes);
 app.use("/api/v1", transferRoutes);
 app.use("/api/v1", aiAccountRoutes);
 app.use("/api/v1", transactionRoutes);
+app.use("/api/v1", pushRoutes);
 
 app.use("/api", cryptoRoutes);
 

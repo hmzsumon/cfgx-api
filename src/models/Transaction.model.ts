@@ -18,6 +18,7 @@ export type TransactionPurpose =
   | "Profit"
   | "Lottery Win"
   | "Rank Bonus"
+  | "Rank Reward"
   | "Refund"
   | "Deduct Profit"
   | "Admin Deposit"
@@ -106,6 +107,7 @@ const transactionSchema = new Schema<ITransaction>(
         "Profit",
         "Lottery Win",
         "Rank Bonus",
+        "Rank Reward",
         "Refund",
         "Deduct Profit",
         "Admin Deposit",

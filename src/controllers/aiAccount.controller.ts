@@ -8,6 +8,7 @@ import AiPosition from "@/models/AiPosition.model";
 import SystemStats from "@/models/SystemStats.model";
 import { User } from "@/models/user.model";
 import UserWallet from "@/models/UserWallet.model";
+import { sendPushToUser } from "@/services/push.service";
 import { getTopOfBook } from "@/services/quote.service";
 import { getContractSpec, isValidLot } from "@/services/specs.service";
 import { typeHandler } from "@/types/express";
@@ -359,7 +360,7 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
 
   // normalize + spec + lot validation
   const symbol = normalizeSymbol(uiSymbol);
-  const spec = getContractSpec(symbol); // crypto => contractSize=1
+  const spec = getContractSpec(symbol);
   if (!isValidLot(lots, spec.minLot, spec.stepLot, spec.maxLot)) {
     throw new ApiError(400, "Invalid lot size");
   }
@@ -379,7 +380,7 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
   const tick = tickFromDigits(spec.digits);
   const roundToTick = (n: number, t: number) => Math.round(n / t) * t;
 
-  const entryPrice = roundToTick(price, tick); // ✅
+  const entryPrice = roundToTick(price, tick);
 
   const tolBps = Number(process.env.UI_PRICE_TOL_BPS ?? 50);
   const drift = Math.abs(entryPrice - qSide) / qSide;
@@ -399,16 +400,15 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
   const commissionOpen = spec.commissionPerLot * lots;
 
   /* ────────── manipulateClosePrice by side (tick-rounded) ──────────
-   Rule:
-   - BUY  => entryPrice + takeProfit
-   - SELL => entryPrice - takeProfit
-   Assumes takeProfit is a positive delta (not an absolute price).
-*/
+     Rule:
+     - BUY  => entryPrice + takeProfit
+     - SELL => entryPrice - takeProfit
+     Assumes takeProfit is a positive delta (not an absolute price).
+  */
   let manipulateClosePrice: number | undefined = undefined;
   if (Number.isFinite(takeProfit) && (takeProfit as number) > 0) {
     const tpDelta = takeProfit as number;
     const raw = side === "buy" ? entryPrice + tpDelta : entryPrice - tpDelta;
-
     const rounded = roundToTick(raw, tick);
     manipulateClosePrice =
       Number.isFinite(rounded) && rounded > 0
@@ -426,12 +426,12 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
     side,
     lots,
     contractSize: spec.contractSize,
-    entryPrice, // ✅ UI authoritative
+    entryPrice,
     margin: 0,
     commissionOpen,
     status: "open",
     openedAt: new Date(),
-    takeProfit, // keep original input
+    takeProfit,
     manipulateClosePrice,
   });
 
@@ -440,6 +440,19 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
   acc.balance = round((acc.balance ?? 0) - commissionOpen, 2);
   acc.equity = acc.balance;
   await acc.save();
+
+  /* ────────── web push (user): position opened ────────── */
+  try {
+    await sendPushToUser(String(user._id), {
+      title: "Position Opened",
+      body: `${symbol} ${side.toUpperCase()} • ${lots} lot${
+        lots > 1 ? "s" : ""
+      } @ ${entryPrice.toFixed(spec.digits)}`,
+      url: `/ai-trade/${pos._id}`,
+      tag: "ai-position-opened",
+      renotify: false,
+    });
+  } catch {}
 
   res.status(201).json({
     success: true,
@@ -457,7 +470,7 @@ export const placeAiMarketOrder: typeHandler = catchAsync(async (req, res) => {
       openedAt: pos.openedAt,
       status: pos.status,
       takeProfit: pos.takeProfit,
-      manipulateClosePrice, // ⬅️ এখানে রেসপন্সে পাঠানো হচ্ছে
+      manipulateClosePrice,
     },
     account: {
       balance: acc.balance,

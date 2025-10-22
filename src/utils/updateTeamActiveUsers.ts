@@ -1,90 +1,66 @@
-import { Types } from 'mongoose';
-import Company from '@/models/SystemStats.model';
-import { User } from '@/models/user.model';
-import Team from '@/models/UserTeamSummary.model';
+/* ──────────  update active users up to 10 levels (first activation only)  ────────── */
+import { User } from "@/models/user.model";
+import Team from "@/models/UserTeamSummary.model";
+import { Types } from "mongoose";
 
 interface IUser {
-	_id: Types.ObjectId;
-	parents?: Types.ObjectId[];
+  _id: Types.ObjectId;
+  parents?: Types.ObjectId[];
 }
 
 interface ITeamLevel {
-	activeUsers: number;
-	inactiveUsers: number;
-	commission: number;
-	[key: string]: any;
+  activeUsers?: number;
+  inactiveUsers?: number;
+  [k: string]: any;
 }
 
-export interface ITeam {
-	userId: Types.ObjectId;
-	teamActiveMember?: number;
-	level_1?: ITeamLevel;
-	level_2?: ITeamLevel;
-	level_3?: ITeamLevel;
-	level_4?: ITeamLevel;
-	level_5?: ITeamLevel;
-	level_6?: ITeamLevel;
-	level_7?: ITeamLevel;
-	level_8?: ITeamLevel;
-	level_9?: ITeamLevel;
-	level_10?: ITeamLevel;
-	save: () => Promise<void>;
-	[key: string]: any;
+interface ITeamDoc {
+  userId: Types.ObjectId;
+  teamActiveMember?: number;
+  [k: string]: any; // allows level_1 ... level_10
+  save: () => Promise<void>;
 }
 
 interface ICompany {
-	users: {
-		total: number;
-		activeTotal: number;
-	};
-	save: () => Promise<void>;
+  users: {
+    total: number; // if you track total registered users here, avoid bumping on activation
+    activeTotal: number; // total active users (lifetime)
+    activeToday?: number;
+  };
+  save: () => Promise<void>;
 }
 
-/**
- * Update active users in team hierarchy up to 10 levels.
- * @param userId MongoDB ObjectId or string
- */
 const updateTeamActiveUsers = async (
-	userId: Types.ObjectId | string
+  userId: Types.ObjectId | string
 ): Promise<void> => {
-	try {
-		const company: ICompany | null = await Company.findOne();
-		if (!company) {
-			console.error('❌ Company not found');
-			return;
-		}
+  try {
+    const user: IUser | null = await User.findById(userId);
+    if (!user || !user.parents?.length) return;
 
-		const user: IUser | null = await User.findById(userId);
-		if (!user || !user.parents?.length) return;
+    /* ──────────  walk parents (max 10 levels)  ────────── */
+    for (let level = 0; level < user.parents.length && level < 10; level++) {
+      const parentId = user.parents[level];
 
-		for (let level = 0; level < user.parents.length && level < 10; level++) {
-			const parentId = user.parents[level];
-			const team: ITeam | null = await Team.findOne({ userId: parentId });
-			if (!team) continue;
+      const team: ITeamDoc | null = await Team.findOne({ userId: parentId });
+      if (!team) continue;
 
-			team.teamActiveMember = (team.teamActiveMember || 0) + 1;
+      /* ──────────  aggregate active members  ────────── */
+      team.teamActiveMember = (team.teamActiveMember ?? 0) + 1;
 
-			const levelKey = `level_${level + 1}`;
-			if (team[levelKey]) {
-				team[levelKey].activeUsers = (team[levelKey].activeUsers || 0) + 1;
-				const currentInactive = team[levelKey].inactiveUsers || 0;
-				team[levelKey].inactiveUsers = Math.max(0, currentInactive - 1);
-			}
+      const levelKey = `level_${level + 1}`;
+      const lvl = team[levelKey] as ITeamLevel | undefined;
 
-			await team.save();
+      if (lvl) {
+        lvl.activeUsers = (lvl.activeUsers ?? 0) + 1;
+        const prevInactive = Number(lvl.inactiveUsers ?? 0);
+        lvl.inactiveUsers = Math.max(0, prevInactive - 1);
+      }
 
-			company.users.total += 1;
-			company.users.activeTotal += 1;
-			await company.save();
-
-			console.log(
-				`✅ Updated team active users for level ${level + 1}: user ${parentId}`,
-				`Total Active Users: ${team.total_active_member}, Active Users: ${team[levelKey]?.active_users}`
-			);
-		}
-	} catch (err: any) {
-		console.error('❌ Error updating team sales:', err.message);
-	}
+      await team.save();
+    }
+  } catch (err: any) {
+    console.error("❌ Error updating team actives:", err.message);
+  }
 };
 
 export default updateTeamActiveUsers;

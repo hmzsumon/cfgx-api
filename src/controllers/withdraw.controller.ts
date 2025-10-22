@@ -8,6 +8,7 @@ import UserWithdrawSummary from "@/models/UserWithdrawSummary.model";
 import Withdraw from "@/models/Withdraw.model";
 import { sendEmail } from "@/services/email/emailService";
 import { withdrawApprovalTemplate } from "@/services/email/templates/withdrawtemplate";
+import { sendPushToAdmins, sendPushToUser } from "@/services/push.service";
 import { typeHandler } from "@/types/express";
 import { ApiError } from "@/utils/ApiError";
 import { catchAsync } from "@/utils/catchAsync";
@@ -53,7 +54,7 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       return next(new ApiError(404, "Agent status not found"));
     }
 
-    //get user withdraw summary
+    /* ────────── user withdraw summary ────────── */
     const userWithdrawSummary = await UserWithdrawSummary.findOne({
       userId: userId,
     });
@@ -61,31 +62,27 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       return next(new ApiError(404, "User withdraw summary not found"));
     }
 
+    /* ────────── balance checks ────────── */
     const userBalance = user.m_balance;
-
-    // check if user has sufficient balance
     if (userBalance < 0) {
       return next(new ApiError(400, "Insufficient balance for withdrawal"));
     }
-
     const numAmount = Number(amount);
-    // Check if user has enough balance
     if (userBalance < numAmount) {
       return next(new ApiError(400, "Insufficient balance for withdrawal"));
     }
 
-    // find company
+    /* ────────── company ────────── */
     const company = await SystemStats.findOne();
     if (!company) {
       return next(new ApiError(404, "Company not found"));
     }
 
-    // Deduct balance from user
+    /* ────────── deduct balance ────────── */
     user.m_balance = Math.max(0, user.m_balance - numAmount);
 
-    // Create withdraw request
+    /* ────────── create withdraw ────────── */
     const withdrawCount = await Withdraw.countDocuments();
-
     const withdraw = await Withdraw.create({
       userId: userId,
       sl_no: `WD-${withdrawCount + 1}`,
@@ -103,7 +100,8 @@ export const newWithdrawRequest: typeHandler = catchAsync(
     });
 
     await user.save();
-    // Create cashOut transaction
+
+    /* ────────── transaction log ────────── */
     const txManager = new TransactionManager();
     await txManager.createTransaction({
       userId: user._id as string,
@@ -114,6 +112,7 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       description: `Withdraw request created with amount ${numAmount}`,
     });
 
+    /* ────────── notifications (user/admin) ────────── */
     const userNotification = await Notification.create({
       user_id: user._id,
       role: user.role,
@@ -132,6 +131,7 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       url: `/withdraws/all-withdraws`,
     });
 
+    /* ────────── socket emit ────────── */
     if (global?.io?.to) {
       global.io.to(String(user._id)).emit("user-notification", {
         success: true,
@@ -145,12 +145,29 @@ export const newWithdrawRequest: typeHandler = catchAsync(
       });
     }
 
-    // update company withdraw reserve
+    /* ────────── company pending reserve ────────── */
     company.withdrawals.pendingAmount += numAmount;
     company.withdrawals.pendingNetAmount += amount;
     company.withdrawals.pendingCount += 1;
     await company.save();
 
+    /* ────────── web push (admins): broadcast new withdraw ────────── */
+    try {
+      const adminIds = (await User.find({ role: "admin" }, "_id").lean()).map(
+        (a) => String(a._id)
+      );
+      if (adminIds.length) {
+        await sendPushToAdmins(adminIds, {
+          title: "New Withdraw Request",
+          body: `New withdraw request of ${numAmount} from ${user.name}`,
+          url: "/withdraws/all-withdraws",
+          tag: "admin-withdraw",
+          renotify: true,
+        });
+      }
+    } catch {}
+
+    /* ────────── response ────────── */
     res.status(200).json({
       success: true,
       message: "Withdraw request created successfully",
@@ -313,11 +330,6 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
     // update user balance
     user.w_balance = Math.max(0, user.w_balance + withdraw.amount);
     user.d_balance = Math.max(0, user.d_balance - withdraw.amount);
-    // check if user.m_balance is less than 30
-    // if (user.m_balance < 30) {
-    //   user.is_active = false;
-    //   await updateTeamInactiveUsers(user._id as string, withdraw.amount);
-    // }
     await user.save();
 
     // update user withdraw summary
@@ -365,6 +377,17 @@ export const approveWithdrawRequest: typeHandler = catchAsync(
         notification: userNotification,
       });
     }
+
+    /* ────────── web push (user): withdraw approved ────────── */
+    try {
+      await sendPushToUser(String(user._id), {
+        title: "Withdraw Request Approved",
+        body: `Your withdraw request of ${withdraw.amount} USDT has been approved.`,
+        url: "/withdraw-history",
+        tag: "withdraw-approved",
+        renotify: true,
+      });
+    } catch {}
 
     /* ────────── send email to user ────────── */
     const html = withdrawApprovalTemplate({

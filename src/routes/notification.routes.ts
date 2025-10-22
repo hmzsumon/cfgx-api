@@ -1,51 +1,52 @@
-import { isAuthenticatedUser, authorizeRoles } from '@/middlewares/auth';
-import { Router } from 'express';
+// backend/routes/notification.route.ts
+import {
+  getAdminNotifications,
+  getMyUnreadNotifications,
+  getMyUnreadNotificationsCount,
+  updateAdminNotificationIsRead,
+  updateNotificationIsRead,
+} from "@/controllers/notification.controller";
+import { authorizeRoles, isAuthenticatedUser } from "@/middlewares/auth";
+import { Router } from "express";
 
+/* ──────────  router init  ────────── */
 const router = Router();
 
-import {
-	getMyUnreadNotificationsCount,
-	getMyUnreadNotifications,
-	updateNotificationIsRead,
-	getAdminNotifications,
-	updateAdminNotificationIsRead,
-} from '@/controllers/notification.controller';
-
-// get my unread notifications count
+/* ──────────  GET: my unread count  ────────── */
 router.get(
-	'/my-unread-notifications-count',
-	isAuthenticatedUser,
-	getMyUnreadNotificationsCount
+  "/my-unread-notifications-count",
+  isAuthenticatedUser,
+  getMyUnreadNotificationsCount
 );
 
-// get my all unread notifications
+/* ──────────  GET: my unread list  ────────── */
 router.get(
-	'/my-unread-notifications',
-	isAuthenticatedUser,
-	getMyUnreadNotifications
+  "/my-unread-notifications",
+  isAuthenticatedUser,
+  getMyUnreadNotifications
 );
 
-// update notification status to read
+/* ──────────  PUT: mark a notification read  ────────── */
 router.put(
-	'/update-notification/:id',
-	isAuthenticatedUser,
-	updateNotificationIsRead
+  "/update-notification/:id",
+  isAuthenticatedUser,
+  updateNotificationIsRead
 );
 
-// get admin notifications
+/* ──────────  GET: admin unread list  ────────── */
 router.get(
-	'/admin-notifications',
-	isAuthenticatedUser,
-	authorizeRoles('admin'),
-	getAdminNotifications
+  "/admin-notifications",
+  isAuthenticatedUser,
+  authorizeRoles("admin"),
+  getAdminNotifications
 );
 
-// routes/notification.route.ts
+/* ──────────  PUT: mark admin notifications read  ────────── */
 router.put(
-	'/update-admin-notification',
-	isAuthenticatedUser,
-	authorizeRoles('admin'),
-	updateAdminNotificationIsRead
+  "/update-admin-notification",
+  isAuthenticatedUser,
+  authorizeRoles("admin"),
+  updateAdminNotificationIsRead
 );
 
 export default router;

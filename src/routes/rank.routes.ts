@@ -1,14 +1,13 @@
-import { isAuthenticatedUser } from '@/middlewares/auth';
-import { Router } from 'express';
-import {
-	getMyRankSummary,
-	getTaskCenterData,
-} from '@/controllers/rank.controller';
+/* ────────── comments ────────── */
+/* Routes mounted under your API prefix, using your auth middleware. */
+/* ────────── comments ────────── */
+import { claimRank, getMyRankSummary } from "@/controllers/rank.controller";
+import { isAuthenticatedUser } from "@/middlewares/auth";
+import { Router } from "express";
+
 const router = Router();
 
-// get my rank summary
-router.get('/my-rank-summary', isAuthenticatedUser, getMyRankSummary);
-// get task center data
-router.get('/task-center-data', isAuthenticatedUser, getTaskCenterData);
+router.get("/my-rank-summary", isAuthenticatedUser, getMyRankSummary);
+router.post("/claim", isAuthenticatedUser, claimRank);
 
 export default router;

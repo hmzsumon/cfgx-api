@@ -8,10 +8,12 @@ import UserWallet from "@/models/UserWallet.model";
 import { createPayment } from "@/services/blockbee.service";
 import { sendEmail } from "@/services/email/emailService";
 import { depositTemplate } from "@/services/email/templates/depositTemplate";
+import { sendPushToAdmins, sendPushToUser } from "@/services/push.service";
 import { typeHandler } from "@/types/express";
 import { ApiError } from "@/utils/ApiError";
 import { catchAsync } from "@/utils/catchAsync";
 import TransactionManager from "@/utils/TransactionManager";
+import updateTeamActiveUsers from "@/utils/updateTeamActiveUsers";
 import updateTeamSales from "@/utils/updateTeamSales";
 import crypto from "crypto";
 import mongoose, { Types } from "mongoose";
@@ -102,6 +104,7 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
     const { confirmations, txid_in, value_coin, result, value_forwarded_coin } =
       req.query;
 
+    /* ────────── validate query ────────── */
     if (
       !confirmations ||
       !txid_in ||
@@ -112,18 +115,18 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
       return next(new ApiError(400, "Missing required query parameters"));
     }
 
+    /* ────────── load deposit ────────── */
     const deposit = await Deposit.findOne({ orderId: depositId });
-    if (!deposit) {
-      return next(new ApiError(404, "Deposit not found"));
-    }
-
+    if (!deposit) return next(new ApiError(404, "Deposit not found"));
     if (deposit.isApproved) return res.status(200).send("✅ Already approved");
 
+    /* ────────── approve path ────────── */
     if (result === "sent" && Number(confirmations) >= 1) {
       const amount = Number(value_coin);
       const forwarded = Number(value_forwarded_coin);
       const charge = amount - forwarded;
 
+      /* ────────── mark deposit approved ────────── */
       deposit.status = "approved";
       deposit.amount = amount;
       deposit.isApproved = true;
@@ -134,9 +137,10 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
       deposit.confirmations = Number(confirmations);
       deposit.callbackReceivedAt = new Date();
       deposit.charge = charge;
-      deposit.receivedAmount = amount - charge; // BlockBee received amount
+      deposit.receivedAmount = amount - charge;
       await deposit.save();
 
+      /* ────────── load user + wallet + company + agent ────────── */
       const user = await User.findById(deposit.userId);
       if (!user) return next(new ApiError(404, "User not found"));
 
@@ -145,34 +149,31 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
 
       const company = await SystemStats.findOne();
       if (!company) return next(new ApiError(404, "Company stats not found"));
-      /* ────────── get Agent Summary ────────── */
+
       const agent = await AgentStatus.findOne({ agentId: user.agentId });
+      if (!agent) return next(new ApiError(404, "Agent not found"));
 
-      if (!agent) {
-        return next(new ApiError(404, "Agent not found"));
-      }
-
+      /* ────────── user balances + activation ────────── */
       const activeAmount = user.m_balance + amount;
-
       user.m_balance += amount;
       user.d_balance = (user.d_balance ?? 0) + amount;
 
       if (activeAmount >= 30 && !user.is_active) {
         user.is_active = true;
         user.activeAt = new Date();
-        // await updateTeamActiveUsers(user._id as string);
+        await updateTeamActiveUsers(user._id as string);
         company.users.activeToday += 1;
         company.users.activeTotal += 1;
       }
       await user.save();
 
+      /* ────────── wallet + team + company aggregates ────────── */
       wallet.totalDeposit += amount;
       await wallet.save();
-      updateTeamSales(user._id as string, amount);
+      await updateTeamSales(user._id as string, amount);
 
       company.deposits.total += amount;
       company.deposits.today += amount;
-
       company.deposits.blockbeeReceivedTotal += forwarded;
       company.deposits.blockbeeReceivedToday += forwarded;
       company.deposits.blockbeeFee += charge;
@@ -184,6 +185,7 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
       agent.toDayDeposits += amount;
       await agent.save();
 
+      /* ────────── notifications (user + admin) ────────── */
       const admin = await User.findOne({ role: "admin" });
       const notifyText = `You have successfully deposited ${amount} USDT.`;
 
@@ -207,6 +209,7 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
           url: `/deposits/all-deposits`,
         }));
 
+      /* ────────── transaction log ────────── */
       const txManager = new TransactionManager();
       await txManager.createTransaction({
         userId: user._id as string,
@@ -217,8 +220,9 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
         description: notifyText,
       });
 
+      /* ────────── socket emit ────────── */
+      const uid = String(user._id);
       if (global?.io?.to) {
-        console.log(`Emitting deposit update to user ${user._id}`);
         global.io.to(String(user._id)).emit("deposit-update", {
           success: true,
           message: "Deposit confirmed ✅",
@@ -226,6 +230,15 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
           txId: txid_in,
           depositId: deposit._id,
         });
+
+        global.io.to(String(uid)).emit("notifications:new", userNotification);
+        const unreadCount = await Notification.countDocuments({
+          user_id: uid,
+          is_read: false,
+        });
+        global.io
+          .to(String(uid))
+          .emit("notifications:count", { count: unreadCount });
 
         global.io.to(String(user._id)).emit("user-notification", {
           success: true,
@@ -242,17 +255,35 @@ export const handleBlockBeeCallback: typeHandler = catchAsync(
         }
       }
 
-      // Send email to user
+      /* ────────── web push (admins): broadcast new deposit ────────── */
+      try {
+        const adminIds = (await User.find({ role: "admin" }, "_id").lean()).map(
+          (a) => String(a._id)
+        );
+        if (adminIds.length) {
+          await sendPushToAdmins(adminIds, {
+            title: "New Deposit",
+            body: `New deposit of ${amount} from ${user.name}`,
+            url: "/deposits/all-deposits",
+            tag: "admin-deposit",
+            renotify: true,
+          });
+        }
+      } catch {}
+
+      /* ────────── email to user ────────── */
       const html = depositTemplate(user.name, amount, depositId);
       await sendEmail({
         email: user.email,
         subject: "Deposit Confirmation",
-        html: html,
+        html,
       });
 
+      /* ────────── done ────────── */
       return res.status(200).send("✅ Deposit confirmed and balance updated");
     }
 
+    /* ────────── noop path ────────── */
     res.status(200).json({
       success: true,
       message: "Callback processed successfully",
@@ -543,6 +574,7 @@ export const adminCreateManualDeposit = catchAsync(async (req, res, next) => {
   if (activeAmount >= 30 && !user.is_active) {
     user.is_active = true;
     user.activeAt = now;
+    await updateTeamActiveUsers(user._id as string);
     company.users.activeToday += 1;
     company.users.activeTotal += 1;
   }
@@ -551,13 +583,12 @@ export const adminCreateManualDeposit = catchAsync(async (req, res, next) => {
   /* ────────── wallet & team sales ────────── */
   wallet.totalDeposit = (wallet.totalDeposit ?? 0) + amount;
   await wallet.save();
-  updateTeamSales(user._id as string, amount);
+  await updateTeamSales(user._id as string, amount);
 
   /* ────────── company aggregates (no blockbee fields) ────────── */
   company.deposits.total += amount;
   company.deposits.today += amount;
 
-  // blockbeeReceivedTotal/Today/charge স্পর্শ করছি না, এগুলো শুধু ব্লকবির জন্য
   await company.save();
 
   /* ────────── agent stats ────────── */
@@ -601,6 +632,9 @@ export const adminCreateManualDeposit = catchAsync(async (req, res, next) => {
   });
 
   /* ────────── socket emit ────────── */
+  const uid = String(user._id);
+
+  /* ────────── socket emit ────────── */
   if (global?.io?.to) {
     global.io.to(String(user._id)).emit("deposit-update", {
       success: true,
@@ -609,6 +643,15 @@ export const adminCreateManualDeposit = catchAsync(async (req, res, next) => {
       txId: deposit.txId,
       depositId: deposit._id,
     });
+
+    global.io.to(String(uid)).emit("notifications:new", userNotification);
+    const unreadCount = await Notification.countDocuments({
+      user_id: uid,
+      is_read: false,
+    });
+    global.io
+      .to(String(uid))
+      .emit("notifications:count", { count: unreadCount });
 
     global.io.to(String(user._id)).emit("user-notification", {
       success: true,
@@ -624,6 +667,30 @@ export const adminCreateManualDeposit = catchAsync(async (req, res, next) => {
       });
     }
   }
+
+  /* ────────── web push (user): manual deposit approved ────────── */
+  try {
+    await sendPushToUser(String(user._id), {
+      title: "USDT Deposit Successful",
+      body: `You have successfully deposited ${amount} USDT.`,
+      url: "/deposit-history",
+      tag: "deposit-approved",
+      renotify: true,
+    });
+  } catch {}
+
+  /* ────────── web push (admins): new manual deposit (optional) ────────── */
+  try {
+    if (admin?._id) {
+      await sendPushToAdmins([String(admin._id)], {
+        title: "New Deposit",
+        body: `New deposit of ${amount} from ${user.name}`,
+        url: "/deposits/all-deposits",
+        tag: "admin-deposit",
+        renotify: true,
+      });
+    }
+  } catch {}
 
   /* ────────── email to user ────────── */
   const html = depositTemplate(user.name, amount, orderId);
