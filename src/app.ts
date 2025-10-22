@@ -18,6 +18,7 @@ import wheelRoutes from "@/routes/wheel.routes";
 import withdrawRoutes from "@/routes/withdraw.routes";
 import { errorHandler } from "./middlewares/errorHandler";
 import accountRoutes from "./routes/account.routes";
+import adminUsersRoutes from "./routes/admin.users.routes";
 import aiAccountRoutes from "./routes/aiAccount.routes";
 import cryptoRoutes from "./routes/crypto.routes";
 import tradeRoutes from "./routes/trade.routes";
@@ -69,6 +70,7 @@ app.use("/api/v1", transferRoutes);
 app.use("/api/v1", aiAccountRoutes);
 app.use("/api/v1", transactionRoutes);
 app.use("/api/v1", pushRoutes);
+app.use("/api/v1", adminUsersRoutes);
 
 app.use("/api", cryptoRoutes);
 

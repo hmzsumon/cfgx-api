@@ -4,7 +4,7 @@ import AgentStatus from "@/models/AgentStatus.model";
 import GenerationRewardConfig from "@/models/GenerationReward.model";
 import SystemStats from "@/models/SystemStats.model";
 import Transaction from "@/models/Transaction.model";
-import { User } from "@/models/user.model";
+import { IUser, User } from "@/models/user.model";
 import UserAddress from "@/models/UserAddress.model";
 import UserDepositSummary from "@/models/UserDepositSummary.model";
 import UserGameSummary from "@/models/UserGameSummary.model";
@@ -29,7 +29,7 @@ import {
   normalizeEmail,
 } from "@/utils/validate";
 import jwt, { JwtPayload, Secret } from "jsonwebtoken";
-import { Types } from "mongoose";
+import mongoose, { ProjectionType, Types } from "mongoose";
 import { StringValue } from "ms";
 
 /* ── 🔐 Register user ───────────────────────────────── */
@@ -1077,3 +1077,181 @@ export const lookupUser: typeHandler = catchAsync(async (req, res, next) => {
 
   res.status(200).json({ success: true, via, user });
 });
+
+/* ────────── types (optional) ────────── */
+type TeamUserRow = {
+  _id: mongoose.Types.ObjectId | string;
+  customerId: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  deposit: number;
+  activeDeposit: number;
+  status: "active" | "inactive";
+  joinedAt?: string;
+
+  /* wallet derived fields */
+  totalDeposit: number;
+  totalWithdraw: number;
+  totalEarning: number;
+  totalAiTrade: number;
+  totalAiTradeBalance: number;
+  totalLiveTradeBalance: number;
+};
+
+/* ────────── get users by team level ────────── */
+
+export const getTeamMembersByLevel: typeHandler = catchAsync(
+  async (req, res, next) => {
+    /* ────────── auth guard ────────── */
+    const userId = req.user?._id;
+    if (!userId) return next(new ApiError(401, "User not authenticated"));
+
+    /* ────────── user exists ────────── */
+    const user = await User.findById(userId);
+    if (!user) return next(new ApiError(404, "User not found"));
+
+    /* ────────── level parse/validate ────────── */
+    const level = Number(req.params.level);
+    if (!Number.isInteger(level) || level < 1 || level > 10) {
+      return next(new ApiError(400, "Invalid level. Allowed: 1-10"));
+    }
+
+    console.log("👤 User:", user.name, level);
+
+    /* ────────── pagination/sort parse ────────── */
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 100)));
+    const sortBy = String(req.query.sortBy ?? "createdAt");
+    const sortOrder = String(req.query.sortOrder ?? "desc") === "asc" ? 1 : -1;
+
+    /* ────────── fetch team summary ────────── */
+    const summary = await UserTeamSummary.findOne({ userId: user._id }).lean();
+    if (!summary) return next(new ApiError(404, "User team summary not found"));
+
+    const levelKey = `level_${level}` as
+      | "level_1"
+      | "level_2"
+      | "level_3"
+      | "level_4"
+      | "level_5"
+      | "level_6"
+      | "level_7"
+      | "level_8"
+      | "level_9"
+      | "level_10";
+
+    const userIdObjs: mongoose.Types.ObjectId[] =
+      (summary as any)?.[levelKey]?.users ?? [];
+
+    if (!Array.isArray(userIdObjs) || userIdObjs.length === 0) {
+      return res.status(200).json({ success: true, users: [] });
+    }
+
+    /* ────────── projection for User ────────── */
+    const projection: ProjectionType<IUser> = {
+      _id: 1,
+      customerId: 1,
+      name: 1,
+      email: 1,
+      phone: 1,
+      deposit: 1,
+      activeDeposit: 1,
+      createdAt: 1,
+      is_active: 1,
+    };
+
+    /* ────────── fetch users (batch) ────────── */
+    const usersRaw = await User.find({ _id: { $in: userIdObjs } }, projection)
+      .sort({ [sortBy]: sortOrder })
+      .lean();
+
+    /* ────────── fetch wallets (single batch) ────────── */
+    const wallets = await UserWallet.find(
+      { userId: { $in: userIdObjs } },
+      {
+        userId: 1,
+        totalDeposit: 1,
+        totalWithdraw: 1,
+        totalEarning: 1,
+        totalAiTradeProfit: 1,
+        totalAiTradeBalance: 1,
+        totalLiveTradeBalance: 1,
+      }
+    ).lean();
+
+    /* ────────── index wallets by userId ────────── */
+    const walletByUserId = new Map<
+      string,
+      {
+        totalDeposit?: number;
+        totalWithdraw?: number;
+        totalEarning?: number;
+        totalAiTradeProfit?: number;
+        totalAiTradeBalance?: number;
+        totalLiveTradeBalance?: number;
+      }
+    >();
+    for (const w of wallets) {
+      walletByUserId.set(String(w.userId), w);
+    }
+
+    /* ────────── shape response rows ────────── */
+    const rows: TeamUserRow[] = usersRaw.map((u: any) => {
+      const joinedAt = u.createdAt ?? u.joinedAt ?? null;
+      /* ────────── derive status strictly from is_active ────────── */
+      const derivedStatus: "active" | "inactive" =
+        typeof u.is_active === "boolean"
+          ? u.is_active
+            ? "active"
+            : "inactive"
+          : "inactive";
+
+      const w = walletByUserId.get(String(u._id)) ?? {};
+
+      return {
+        _id: u._id,
+        customerId: u.customerId ?? "-",
+        name: u.name ?? "-",
+        email: u.email ?? undefined,
+        phone: u.phone ?? undefined,
+        deposit: typeof u.deposit === "number" ? u.deposit : 0,
+        activeDeposit:
+          typeof u.activeDeposit === "number" ? u.activeDeposit : 0,
+        status: derivedStatus,
+        joinedAt: joinedAt ? new Date(joinedAt).toISOString() : undefined,
+
+        /* wallet derived fields */
+        totalDeposit: typeof w.totalDeposit === "number" ? w.totalDeposit : 0,
+        totalWithdraw:
+          typeof w.totalWithdraw === "number" ? w.totalWithdraw : 0,
+        totalEarning: typeof w.totalEarning === "number" ? w.totalEarning : 0,
+        totalAiTrade:
+          typeof w.totalAiTradeProfit === "number" ? w.totalAiTradeProfit : 0,
+        totalAiTradeBalance:
+          typeof w.totalAiTradeBalance === "number" ? w.totalAiTradeBalance : 0,
+        totalLiveTradeBalance:
+          typeof w.totalLiveTradeBalance === "number"
+            ? w.totalLiveTradeBalance
+            : 0,
+      };
+    });
+
+    /* ────────── server-side slice paginate ────────── */
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    const paged = rows.slice(start, end);
+
+    /* ────────── respond ────────── */
+    res.status(200).json({
+      success: true,
+      users: paged,
+      pagination: {
+        total: rows.length,
+        page,
+        limit,
+        hasMore: end < rows.length,
+      },
+    });
+  }
+);

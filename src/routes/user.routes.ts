@@ -11,6 +11,7 @@ import {
   getMyTeamMembers,
   getMyTeamSummary,
   getMyTransactions,
+  getTeamMembersByLevel,
   getUserBalance,
   getUserByCustomerId,
   getUserPaymentMethods,
@@ -123,5 +124,11 @@ router.post("/send-otp-to-email", isAuthenticatedUser, sendOtpToEmail);
 
 /* ────────── Verify OTP ────────── */
 router.post("/verify-otp", isAuthenticatedUser, verifyOtp);
+
+router.get(
+  "/team/levels/:level/users",
+  isAuthenticatedUser,
+  getTeamMembersByLevel
+);
 
 export default router;
